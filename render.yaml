@@ -1,0 +1,104 @@
+# =====================================================================
+#  Render Blueprint - tạo dịch vụ web ToyLand bằng một cú bấm
+#  (Render Dashboard -> New -> Blueprint -> chọn repo này).
+#
+#  Các biến "sync: false" là BÍ MẬT: Render sẽ hỏi giá trị lúc tạo,
+#  không bao giờ ghi vào file này / lên GitHub.
+#  Chứng chỉ CA của Aiven: thêm tay ở tab Environment -> Secret Files,
+#  tên file "ca.pem" (Render đặt nó ở /etc/secrets/ca.pem).
+# =====================================================================
+services:
+  - type: web
+    name: toyland
+    runtime: docker
+    plan: free
+    # Chọn vùng gần máy chủ Aiven nhất (xem vùng trên trang dịch vụ Aiven)
+    region: singapore
+    branch: main
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/healthz
+    autoDeploy: true
+    envVars:
+      # --- Ứng dụng ---
+      - key: APP_NAME
+        value: ToyLand
+      - key: APP_ENV
+        value: production
+      - key: APP_DEBUG
+        value: "false"
+      - key: APP_KEY
+        sync: false            # dán kết quả của: php artisan key:generate --show
+      - key: APP_URL
+        sync: false            # ví dụ https://toyland.onrender.com
+      - key: FORCE_HTTPS
+        value: "true"
+      - key: LOG_CHANNEL
+        value: stderr
+      - key: LOG_LEVEL
+        value: warning
+
+      # --- CSDL Aiven MySQL ---
+      - key: DB_CONNECTION
+        value: mysql
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        sync: false
+      - key: DB_DATABASE
+        value: defaultdb
+      - key: DB_USERNAME
+        value: avnadmin
+      - key: DB_PASSWORD
+        sync: false
+      - key: MYSQL_ATTR_SSL_CA
+        value: /etc/secrets/ca.pem
+
+      # --- Phiên, cache: lưu trong MySQL để không mất khi máy chủ ngủ ---
+      - key: SESSION_DRIVER
+        value: database
+      - key: SESSION_SECURE_COOKIE
+        value: "true"
+      - key: CACHE_DRIVER
+        value: database
+      - key: QUEUE_CONNECTION
+        value: sync
+
+      # --- Ảnh: Cloudinary ---
+      - key: CLOUDINARY_URL
+        sync: false            # cloudinary://<api_key>:<api_secret>@<cloud_name>
+      - key: CLOUDINARY_FOLDER
+        value: toyland
+
+      # --- Email: Render gói miễn phí CHẶN cổng 25/465/587 -> dùng Brevo cổng 2525 ---
+      - key: MAIL_MAILER
+        value: smtp
+      - key: MAIL_HOST
+        value: smtp-relay.brevo.com
+      - key: MAIL_PORT
+        value: "2525"
+      - key: MAIL_ENCRYPTION
+        value: tls
+      - key: MAIL_USERNAME
+        sync: false
+      - key: MAIL_PASSWORD
+        sync: false            # SMTP key của Brevo, KHÔNG phải mật khẩu đăng nhập
+      - key: MAIL_FROM_ADDRESS
+        sync: false            # email đã xác minh làm người gửi trong Brevo
+      - key: MAIL_FROM_NAME
+        value: ToyLand
+
+      # --- Tài khoản quản trị tạo ở lần triển khai đầu ---
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: SEED_DEMO_CUSTOMERS
+        value: "true"
+
+      # --- Việc hằng ngày (cron-job.org gọi /api/cron/daily) ---
+      - key: CRON_TOKEN
+        generateValue: true
+
+      # --- Chatbot: tắt cho tới giai đoạn tích hợp Gemini ---
+      - key: CHATBOT_LLM_DRIVER
+        value: none

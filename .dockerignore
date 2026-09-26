@@ -1,0 +1,55 @@
+# =====================================================================
+#  Những thứ KHÔNG được đưa vào ảnh Docker.
+#  Nguyên tắc: bí mật, dữ liệu cá nhân, tài liệu, đồ tạm -> loại hết.
+#  Bí mật thật (mật khẩu CSDL, khóa API) khai trong Environment của Render.
+# =====================================================================
+
+# Bí mật & cấu hình máy nhà
+.env
+.env.*
+tk.md
+1.md
+*.pem
+*.key
+auth.json
+
+# Git, IDE, công cụ AI
+.git
+.gitignore
+.gitattributes
+.idea
+.vscode
+.claude
+Claude outputs
+
+# Thư viện cài lại trong lúc build
+vendor
+node_modules
+
+# Bộ nhớ đệm / nhật ký / phiên của máy nhà
+bootstrap/cache/*.php
+storage/logs/*
+storage/framework/cache/*
+storage/framework/sessions/*
+storage/framework/views/*
+storage/framework/testing
+storage/app/public/*
+storage/*.key
+public/storage
+public/hot
+public/uploads/*
+.phpunit.result.cache
+
+# Tài liệu, báo cáo, kiểm thử - không cần để chạy web
+*.docx
+*.pdf
+*.md
+tests
+tools
+phpunit.xml
+docker-compose*.yml
+render.yaml
+Dockerfile
+.dockerignore
+npm-debug.log
+yarn-error.log

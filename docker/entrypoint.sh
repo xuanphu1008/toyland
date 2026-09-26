@@ -1,0 +1,59 @@
+#!/bin/sh
+# =====================================================================
+#  Chạy MỖI LẦN container khởi động (kể cả khi Render đánh thức máy ngủ).
+#  Mọi bước ở đây đều an toàn khi chạy lặp lại.
+# =====================================================================
+set -e
+cd /var/www/html
+
+echo "[toyland] Khởi động ($(date '+%Y-%m-%d %H:%M:%S'))"
+
+# --- Chứng chỉ CA của Aiven -----------------------------------------
+# Cách 1 (khuyên dùng trên Render): Secret File "ca.pem" -> /etc/secrets/ca.pem
+#          và đặt MYSQL_ATTR_SSL_CA=/etc/secrets/ca.pem
+# Cách 2 (tiện khi chạy docker trên máy): dán nguyên nội dung PEM vào DB_CA_CERT
+if [ -n "$DB_CA_CERT" ] && [ -z "$MYSQL_ATTR_SSL_CA" ]; then
+    printf '%s\n' "$DB_CA_CERT" > /tmp/db-ca.pem
+    export MYSQL_ATTR_SSL_CA=/tmp/db-ca.pem
+fi
+
+if [ -n "$MYSQL_ATTR_SSL_CA" ] && [ ! -r "$MYSQL_ATTR_SSL_CA" ]; then
+    echo "[toyland] LỖI: không đọc được file CA tại $MYSQL_ATTR_SSL_CA" >&2
+    echo "[toyland]      Kiểm tra lại Secret File trên Render (tên file phải là ca.pem)." >&2
+    exit 1
+fi
+
+if [ -z "$APP_KEY" ]; then
+    echo "[toyland] LỖI: chưa khai APP_KEY. Tạo bằng: php artisan key:generate --show" >&2
+    exit 1
+fi
+
+# --- Bộ nhớ đệm cấu hình / route / view -----------------------------
+# Phải chạy lúc khởi động (không phải lúc build) vì biến môi trường
+# của Render chỉ có ở thời điểm này.
+php artisan config:cache
+php artisan route:cache
+php artisan view:cache
+
+# --- Cập nhật cấu trúc CSDL -----------------------------------------
+# Aiven gói miễn phí có thể mất vài giây để nhận kết nối, nên thử lại vài lần.
+attempt=1
+until php artisan migrate --force; do
+    if [ "$attempt" -ge 10 ]; then
+        echo "[toyland] LỖI: không kết nối/migrate được CSDL sau $attempt lần thử." >&2
+        echo "[toyland]      Kiểm tra DB_HOST/DB_PORT/DB_USERNAME/DB_PASSWORD và dịch vụ Aiven còn bật." >&2
+        exit 1
+    fi
+    echo "[toyland] CSDL chưa sẵn sàng, thử lại sau 6 giây (lần $attempt)..."
+    attempt=$((attempt + 1))
+    sleep 6
+done
+
+# --- Dữ liệu mẫu: chỉ nạp khi CSDL còn trống -----------------------
+php artisan toyland:deploy-seed
+
+# Các lệnh artisan ở trên chạy bằng root; trả quyền lại cho Apache (www-data)
+chown -R www-data:www-data storage bootstrap/cache public/uploads
+
+echo "[toyland] Sẵn sàng, chuyển quyền cho Apache."
+exec "$@"

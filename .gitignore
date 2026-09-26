@@ -1,0 +1,28 @@
+/node_modules
+/public/hot
+/public/storage
+/storage/*.key
+/vendor
+.env
+.env.backup
+.env.production
+.env.*.local
+.phpunit.result.cache
+docker-compose.override.yml
+Homestead.json
+Homestead.yaml
+npm-debug.log
+yarn-error.log
+/.idea
+/.vscode
+
+# --- Bí mật & ghi chú riêng: TUYỆT ĐỐI không đưa lên GitHub ---
+/tk.md
+/1.md
+*.pem
+auth.json
+
+# --- Tài liệu / báo cáo / đồ của công cụ AI ---
+*.docx
+/Claude outputs/
+/.claude/
