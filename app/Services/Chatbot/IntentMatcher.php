@@ -210,6 +210,8 @@ class IntentMatcher
             'human_handoff' => 'Xin gặp nhân viên',
             'faq' => 'Khớp câu hỏi thường gặp',
             'llm' => 'Trả lời bằng AI',
+            'off_topic' => 'Ngoài phạm vi (không gọi AI)',
+            'llm_busy' => 'AI tạm hết lượt',
             'unknown' => 'Không hiểu',
         ][$intent] ?? $intent;
     }

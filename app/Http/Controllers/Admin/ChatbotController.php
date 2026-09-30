@@ -7,6 +7,7 @@ use App\Models\ChatConversation;
 use App\Models\ChatMessage;
 use App\Services\Chatbot\IntentMatcher;
 use App\Services\Chatbot\LlmClient;
+use App\Services\Chatbot\LlmQuota;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -34,7 +35,56 @@ class ChatbotController extends Controller
             'intentStats' => $this->intentStats(),
             'unanswered' => $this->unanswered(),
             'llmEnabled' => app(LlmClient::class)->isEnabled(),
+            'llmDriver' => config('services.chatbot.driver'),
+            'llmModel' => config('services.chatbot.model'),
+            'llmQuota' => app(LlmQuota::class)->stats(),
         ]);
+    }
+
+    /**
+     * Nút "Kiểm tra kết nối AI": gọi thử Gemini đúng một lần và báo kết quả.
+     * Render gói miễn phí không có cửa sổ lệnh, nên đây là cách duy nhất để
+     * biết key/model trên máy chủ thật có chạy không mà không phải đoán.
+     */
+    public function testLlm(LlmClient $llm, LlmQuota $quota)
+    {
+        if (! $llm->isEnabled()) {
+            return back()->with('error', 'Chưa bật AI: khai CHATBOT_LLM_DRIVER=gemini và CHATBOT_LLM_KEY trên Render.');
+        }
+
+        if (config('services.chatbot.driver') !== 'gemini') {
+            return back()->with('error', 'Nút kiểm tra hiện chỉ hỗ trợ driver gemini.');
+        }
+
+        $quota->hit('admin-test');
+        $started = microtime(true);
+
+        try {
+            $result = $llm->callGemini(
+                'Shop có những nhóm đồ chơi nào cho bé 3 tuổi? Trả lời trong 1 câu.',
+                '- ToyLand bán đồ chơi trẻ em: lắp ghép, búp bê, xe mô hình, đồ chơi vận động.'
+            );
+        } catch (\Throwable $e) {
+            return back()->with('error', 'Không kết nối được tới Gemini: ' . \Illuminate\Support\Str::limit($e->getMessage(), 200));
+        }
+
+        $ms = (int) round((microtime(true) - $started) * 1000);
+
+        if ($result['text'] === null) {
+            return back()->with('error', 'Gemini lỗi (' . $result['status'] . '): ' . $result['error']);
+        }
+
+        $tokens = $result['tokens'];
+
+        return back()->with('success', sprintf(
+            'AI hoạt động ✔ Model %s trả lời sau %d ms (token vào %d, ra %d, suy nghĩ %d): "%s"',
+            $result['model'],
+            $ms,
+            $tokens['prompt'] ?? 0,
+            $tokens['output'] ?? 0,
+            $tokens['thinking'] ?? 0,
+            \Illuminate\Support\Str::limit($result['text'], 200)
+        ));
     }
 
     public function show(ChatConversation $conversation)

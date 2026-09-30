@@ -81,6 +81,12 @@ Route::get('/register/success', [AuthController::class, 'showRegisterSuccess'])-
 
 Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth')->name('logout');
 
+// Ai đó mở /logout bằng GET (tải lại trang sau khi đăng xuất, bấm Back, hoặc
+// Render đánh thức máy chủ rồi tải lại trang) thì dẫn về trang chủ thay vì
+// báo "405 Method Not Allowed". KHÔNG đăng xuất qua GET: trang web khác có
+// thể nhúng <img src="/logout"> để đá người dùng ra - đăng xuất vẫn chỉ qua POST.
+Route::get('/logout', [AuthController::class, 'logoutFallback'])->name('logout.fallback');
+
 // Bấm link xác thực trong email: cho phép Guest (chưa đăng nhập) truy cập, chỉ cần chữ ký hợp lệ
 Route::get('/email/verify/{id}/{hash}', [AuthController::class, 'verify'])
     ->middleware('signed')
@@ -277,6 +283,9 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'admin'])->group(fun
         Route::get('/', [AdminChatbotController::class, 'index'])->name('index');
         Route::get('/hoi-thoai/{conversation}', [AdminChatbotController::class, 'show'])->name('show');
         Route::delete('/hoi-thoai/{conversation}', [AdminChatbotController::class, 'destroy'])->name('destroy');
+        Route::post('/kiem-tra-ai', [AdminChatbotController::class, 'testLlm'])
+            ->middleware('throttle:5,1')
+            ->name('test-llm');
     });
     Route::get('/tickets', [AdminTicketController::class, 'index'])->name('tickets.index');
     Route::get('/tickets/{ticket}', [AdminTicketController::class, 'show'])->name('tickets.show');

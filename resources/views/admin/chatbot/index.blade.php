@@ -14,6 +14,65 @@
     </span>
 </div>
 
+{{-- ============ AI BỔ TRỢ (GEMINI): HẠN MỨC & KIỂM TRA ============ --}}
+@if ($llmEnabled)
+@php
+    $q = $llmQuota;
+    $usedPct = $q['day_limit'] > 0 ? min(100, round($q['today'] / $q['day_limit'] * 100)) : 0;
+@endphp
+<div class="card border-0 shadow-sm rounded-4 mb-4">
+    <div class="card-body">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+            <div>
+                <h6 class="fw-bold mb-1">🤖 AI bổ trợ: {{ $llmDriver }} {{ $llmModel ? '· ' . $llmModel : '' }}</h6>
+                <p class="text-muted small mb-0">
+                    Chỉ những câu đúng chủ đề mà bot nội bộ chưa trả lời được mới gửi lên AI;
+                    thông tin cá nhân được che trước khi gửi.
+                </p>
+            </div>
+            <form action="{{ route('admin.chatbot.test-llm') }}" method="POST">
+                @csrf
+                <button type="submit" class="btn btn-sm btn-outline-primary">
+                    <i class="bi bi-plug me-1"></i> Kiểm tra kết nối AI
+                </button>
+            </form>
+        </div>
+
+        <div class="row g-3 mt-1 small">
+            <div class="col-md-5">
+                <div class="d-flex justify-content-between">
+                    <span>Lượt gọi hôm nay (theo giờ Google)</span>
+                    <strong>{{ number_format($q['today']) }} / {{ number_format($q['day_limit']) }}</strong>
+                </div>
+                <div class="progress mt-1" style="height: 6px;">
+                    <div class="progress-bar {{ $usedPct >= 90 ? 'bg-danger' : ($usedPct >= 70 ? 'bg-warning' : 'bg-success') }}"
+                         style="width: {{ $usedPct }}%"></div>
+                </div>
+                <div class="text-muted mt-1">
+                    Đặt lại sau khoảng {{ gmdate('G', $q['reset_in']) }} giờ {{ gmdate('i', $q['reset_in']) }} phút.
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div>Phút này: <strong>{{ $q['minute'] }} / {{ $q['minute_limit'] }}</strong></div>
+                <div>Mỗi khách/ngày: <strong>{{ $q['per_client_limit'] }}</strong> lượt</div>
+            </div>
+            <div class="col-md-4">
+                @if ($q['cooldown'] > 0)
+                    <div class="text-danger fw-semibold">⏸ Đang tạm dừng gọi AI thêm {{ $q['cooldown'] }} giây</div>
+                @else
+                    <div class="text-success fw-semibold">● Sẵn sàng</div>
+                @endif
+                @if ($q['last_error'])
+                    <div class="text-muted mt-1">
+                        Lỗi gần nhất ({{ $q['last_error']['at'] }}): {{ $q['last_error']['message'] }}
+                    </div>
+                @endif
+            </div>
+        </div>
+    </div>
+</div>
+@endif
+
 {{-- ============ SỐ LIỆU TỔNG QUAN ============ --}}
 <div class="row g-3 mb-4">
     @php

@@ -68,15 +68,16 @@ return [
     | ngoài kịch bản. KHÔNG khai gì thì hệ thống vẫn hoạt động bình thường.
     |
     | Khai trong .env nếu muốn bật:
-    |   CHATBOT_LLM_DRIVER=openai        # none | openai | gemini
-    |   CHATBOT_LLM_KEY=sk-...
-    |   CHATBOT_LLM_MODEL=gpt-4o-mini    # hoặc gemini-1.5-flash
+    |   CHATBOT_LLM_DRIVER=gemini        # none | openai | gemini
+    |   CHATBOT_LLM_KEY=...              # API key từ Google AI Studio
+    |   CHATBOT_LLM_MODEL=...            # tên model Flash-Lite/Flash trong AI Studio
     |   CHATBOT_LLM_VERIFY_SSL=false     # đặt false nếu Laragon báo lỗi chứng chỉ
     */
     'chatbot' => [
         'driver' => env('CHATBOT_LLM_DRIVER', 'none'),
         'key' => env('CHATBOT_LLM_KEY'),
-        'model' => env('CHATBOT_LLM_MODEL', 'gpt-4o-mini'),
+        // Bỏ trống thì mỗi driver tự chọn mặc định (xem LlmClient)
+        'model' => env('CHATBOT_LLM_MODEL'),
         // Chấp nhận nhiều tên biến cho dễ dùng: nhiều hướng dẫn chạy model
         // nội bộ (Ollama, LM Studio, vLLM) bảo đặt OPENAI_BASE_URL/OPENAI_BASE_URI.
         // Ví dụ Ollama: http://localhost:11434/v1
@@ -90,6 +91,25 @@ return [
         'timeout' => (int) env('CHATBOT_LLM_TIMEOUT', 45),
 
         'verify_ssl' => env('CHATBOT_LLM_VERIFY_SSL', true),
+
+        // ---- Gemini: tắt bớt "suy nghĩ" nội bộ cho nhanh và đỡ tốn token ----
+        // minimal | low | medium | high | off (off = không gửi tham số này)
+        'thinking_level' => env('CHATBOT_LLM_THINKING', 'minimal'),
+        // Trần token đầu ra (tính cả phần suy nghĩ). Độ dài câu trả lời do prompt khống chế.
+        'max_output_tokens' => (int) env('CHATBOT_LLM_MAX_OUTPUT_TOKENS', 1024),
+
+        // ---- Giới hạn dữ liệu gửi lên AI ----
+        'max_input_chars' => (int) env('CHATBOT_LLM_MAX_INPUT_CHARS', 500),
+        'history_turns' => (int) env('CHATBOT_LLM_HISTORY_TURNS', 4),
+        'history_chars' => (int) env('CHATBOT_LLM_HISTORY_CHARS', 300),
+
+        // ---- Hạn mức (đặt THẤP hơn trần gói miễn phí trong AI Studio) ----
+        // Xem trần thật của project tại https://aistudio.google.com (mục Rate limit)
+        'rpm' => (int) env('CHATBOT_LLM_RPM', 8),
+        'rpd' => (int) env('CHATBOT_LLM_RPD', 800),
+        'per_client_day' => (int) env('CHATBOT_LLM_PER_CLIENT_DAY', 30),
+        // Câu hỏi mở đầu giống hệt nhau dùng lại câu trả lời trong ngần này phút
+        'answer_cache_minutes' => (int) env('CHATBOT_LLM_CACHE_MINUTES', 360),
     ],
 
     /*

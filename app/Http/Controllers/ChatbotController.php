@@ -143,6 +143,8 @@ class ChatbotController extends Controller
             ->map(fn (ChatMessage $m) => [
                 'role' => $m->role === 'bot' ? 'assistant' : 'user',
                 'content' => $m->content,
+                // Để LlmGuard biết câu nào của bot chứa dữ liệu riêng của khách mà ẩn đi
+                'intent' => $m->intent,
             ])
             ->values()
             ->all();

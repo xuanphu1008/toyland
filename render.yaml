@@ -99,6 +99,51 @@ services:
       - key: CRON_TOKEN
         generateValue: true
 
-      # --- Chatbot: tắt cho tới giai đoạn tích hợp Gemini ---
+      # --- Giao hàng nhanh GHN: BẮT BUỘC để khách chọn được tỉnh/huyện/xã khi đặt hàng ---
+      - key: GHN_BASE_URL
+        value: https://dev-online-gateway.ghn.vn/shiip/public-api
+      - key: GHN_TOKEN
+        sync: false
+      - key: GHN_SHOP_ID
+        sync: false
+      - key: GHN_FROM_DISTRICT_ID
+        sync: false
+
+      # --- MoMo sandbox ---
+      - key: MOMO_ENDPOINT
+        value: https://test-payment.momo.vn/v2/gateway/api/create
+      - key: MOMO_PARTNER_CODE
+        sync: false
+      - key: MOMO_ACCESS_KEY
+        sync: false
+      - key: MOMO_SECRET_KEY
+        sync: false
+      - key: MOMO_REDIRECT_URL
+        sync: false            # https://<dia-chi-render>/payment/momo/callback
+      - key: MOMO_IPN_URL
+        sync: false            # https://<dia-chi-render>/payment/momo/ipn
+
+      # --- Đăng nhập Google (tùy chọn) ---
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        sync: false            # https://<dia-chi-render>/auth/google/callback
+
+      # --- Chatbot: AI bổ trợ Gemini (bot nội bộ vẫn chạy đủ khi AI tắt/hết lượt) ---
       - key: CHATBOT_LLM_DRIVER
-        value: none
+        value: gemini
+      - key: CHATBOT_LLM_KEY
+        sync: false            # API key tạo trong Google AI Studio
+      - key: CHATBOT_LLM_MODEL
+        sync: false            # tên model Flash-Lite/Flash đang có trong AI Studio
+      - key: CHATBOT_LLM_TIMEOUT
+        value: "20"
+      # Hạn mức tự đặt - THẤP hơn trần của project trong AI Studio (mục Rate limit)
+      - key: CHATBOT_LLM_RPM
+        value: "8"
+      - key: CHATBOT_LLM_RPD
+        value: "800"
+      - key: CHATBOT_LLM_PER_CLIENT_DAY
+        value: "30"

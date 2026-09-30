@@ -48,7 +48,12 @@ class SystemController extends Controller
             abort(404);
         }
 
-        $given = (string) ($request->bearerToken() ?: $request->header('X-Cron-Token', ''));
+        // Nhận cả 3 kiểu khai: "Authorization: Bearer <mã>", "Authorization: <mã>"
+        // (quên chữ Bearer - lỗi rất hay gặp khi điền trên cron-job.org) và "X-Cron-Token: <mã>"
+        $given = (string) ($request->bearerToken()
+            ?: $request->header('X-Cron-Token')
+            ?: $request->header('Authorization', ''));
+        $given = trim($given);
 
         if ($given === '' || ! hash_equals($expected, $given)) {
             abort(403);

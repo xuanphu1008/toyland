@@ -108,6 +108,16 @@ class AuthController extends Controller
         return redirect('/');
     }
 
+    /** GET /logout - xem chú thích ở routes/web.php */
+    public function logoutFallback()
+    {
+        if (Auth::check()) {
+            return redirect('/')->with('error', 'Bạn vẫn đang đăng nhập. Hãy bấm nút "Đăng xuất" trong menu tài khoản.');
+        }
+
+        return redirect('/')->with('success', 'Bạn đã đăng xuất.');
+    }
+
     public function showRegisterSuccess()
     {
         return view('auth.register-success');

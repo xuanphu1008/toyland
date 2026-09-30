@@ -13,6 +13,7 @@ use App\Services\RecommendationService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 
 /**
  * BỘ NÃO CỦA CHATBOT
@@ -50,6 +51,8 @@ class ChatbotService
         private IntentMatcher $intents,
         private EntityExtractor $entities,
         private LlmClient $llm,
+        private LlmGuard $guard,
+        private LlmQuota $quota,
         private RecommendationService $recommender,
         private GiftFinderService $giftFinder
     ) {
@@ -641,16 +644,70 @@ class ChatbotService
         );
     }
 
+    /**
+     * Nhờ AI trả lời - chỉ tới đây khi bot nội bộ và FAQ đều bó tay.
+     *
+     * Trước khi gửi đi phải qua đủ 4 cửa, cửa nào chặn thì trả lời ngay bằng
+     * bot nội bộ, KHÔNG tốn lượt gọi API:
+     *   1. Lọc chủ đề + chặn câu lệnh độc   (LlmGuard::classify)
+     *   2. Hạn mức phút/ngày/khách + cầu dao (LlmQuota::deny)
+     *   3. Câu hỏi y hệt đã trả lời gần đây  (cache câu trả lời)
+     *   4. Che thông tin cá nhân + cắt ngắn   (LlmGuard::maskPii / sanitizeHistory)
+     */
     private function askLlm(string $message, array $history): ?array
     {
         if (! $this->llm->isEnabled()) {
             return null;
         }
 
-        $answer = $this->llm->ask($message, $this->shopContext(), $history);
+        // ---- Cửa 1: chủ đề -------------------------------------------------
+        $verdict = $this->guard->classify($message);
 
-        if (! $answer) {
-            return null;
+        if ($verdict !== LlmGuard::VERDICT_OK) {
+            return $this->offTopic();
+        }
+
+        // ---- Cửa 2: hạn mức ------------------------------------------------
+        $client = $this->clientKey();
+
+        if ($this->quota->deny($client) !== null) {
+            return $this->llmBusy();
+        }
+
+        // ---- Cửa 4 (làm trước để khóa cache cũng không chứa dữ liệu cá nhân) --
+        $maxChars = max(100, (int) config('services.chatbot.max_input_chars', 500));
+        $question = Str::limit($this->guard->maskPii($message), $maxChars, '…');
+        $cleanHistory = $this->guard->sanitizeHistory(
+            $history,
+            max(0, (int) config('services.chatbot.history_turns', 4)),
+            max(50, (int) config('services.chatbot.history_chars', 300))
+        );
+
+        // ---- Cửa 3: câu hỏi mở đầu giống hệt thì dùng lại câu trả lời cũ ----
+        // (chỉ áp dụng cho câu ĐẦU hội thoại - có lịch sử thì ngữ cảnh khác nhau)
+        $hasUserHistory = collect($cleanHistory)->contains(fn ($t) => $t['role'] === 'user');
+        $cacheKey = 'chatbot:llm:answer:' . sha1(TextAnalyzer::normalize($question));
+        $answer = $hasUserHistory ? null : Cache::get($cacheKey);
+
+        if ($answer === null) {
+            $this->quota->hit($client);
+            $answer = $this->llm->ask($question, $this->shopContext(), $cleanHistory);
+
+            if (! $answer) {
+                return null;
+            }
+
+            // Lớp chặn thứ hai: AI tự nhận ra câu ngoài phạm vi
+            if (str_contains($answer, LlmClient::OFF_TOPIC_MARKER)) {
+                return $this->offTopic();
+            }
+
+            // AI có lặp lại số điện thoại/email trong câu hỏi thì cũng che luôn
+            $answer = Str::limit($this->guard->maskPii($answer), 1200, '…');
+
+            if (! $hasUserHistory) {
+                Cache::put($cacheKey, $answer, (int) config('services.chatbot.answer_cache_minutes', 360) * 60);
+            }
         }
 
         // LƯỚI AN TOÀN: LLM không truy cập CSDL nên bị cấm nêu tên sản phẩm
@@ -665,6 +722,40 @@ class ChatbotService
             0.5,
             $this->productCards($products),
             $products->isEmpty() ? $this->quickReplies() : []
+        );
+    }
+
+    /** Định danh khách để chia hạn mức: đăng nhập thì theo tài khoản, chưa thì theo IP */
+    private function clientKey(): string
+    {
+        return Auth::check() ? 'user:' . Auth::id() : 'ip:' . (request()->ip() ?? 'unknown');
+    }
+
+    private function offTopic(): array
+    {
+        return $this->answer(
+            "Mình là trợ lý của ToyLand nên chỉ hỗ trợ được các câu hỏi về đồ chơi, quà cho bé "
+            . "và việc mua sắm ở shop (đơn hàng, giao hàng, thanh toán, đổi trả, khuyến mãi) thôi nhé 😊\n"
+            . 'Bạn thử hỏi kiểu: "đồ chơi nào giúp bé 3 tuổi phát triển vận động?"',
+            'off_topic',
+            1.0,
+            [],
+            $this->quickReplies()
+        );
+    }
+
+    private function llmBusy(): array
+    {
+        return $this->answer(
+            "Trợ lý đang hơi đông khách nên chưa trả lời tự do được câu này 🙏\n"
+            . "Bạn có thể hỏi theo các gợi ý bên dưới (mình tra dữ liệu thật ngay), "
+            . 'hoặc bấm "Gặp nhân viên tư vấn".',
+            'llm_busy',
+            0.0,
+            [],
+            array_merge($this->quickReplies(), [
+                ['label' => '💬 Gặp nhân viên tư vấn', 'action' => 'switch_to_human'],
+            ])
         );
     }
 
