@@ -105,9 +105,9 @@ return [
 
         // ---- Hạn mức (đặt THẤP hơn trần gói miễn phí trong AI Studio) ----
         // Xem trần thật của project tại https://aistudio.google.com (mục Rate limit)
-        'rpm' => (int) env('CHATBOT_LLM_RPM', 8),
-        'rpd' => (int) env('CHATBOT_LLM_RPD', 800),
-        'per_client_day' => (int) env('CHATBOT_LLM_PER_CLIENT_DAY', 30),
+        'rpm' => (int) env('CHATBOT_LLM_RPM', 4),
+        'rpd' => (int) env('CHATBOT_LLM_RPD', 18),
+        'per_client_day' => (int) env('CHATBOT_LLM_PER_CLIENT_DAY', 5),
         // Câu hỏi mở đầu giống hệt nhau dùng lại câu trả lời trong ngần này phút
         'answer_cache_minutes' => (int) env('CHATBOT_LLM_CACHE_MINUTES', 360),
     ],

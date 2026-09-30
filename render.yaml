@@ -141,9 +141,10 @@ services:
       - key: CHATBOT_LLM_TIMEOUT
         value: "20"
       # Hạn mức tự đặt - THẤP hơn trần của project trong AI Studio (mục Rate limit)
+      # Công thức: RPM = trần RPM - 1 ; RPD = 90% trần RPD ; mỗi khách ≈ RPD / 4
       - key: CHATBOT_LLM_RPM
-        value: "8"
+        value: "4"
       - key: CHATBOT_LLM_RPD
-        value: "800"
+        value: "18"
       - key: CHATBOT_LLM_PER_CLIENT_DAY
-        value: "30"
+        value: "5"

@@ -13,9 +13,9 @@ use Illuminate\Support\Facades\Cache;
  * chạm trần, rồi trả lời bằng bot nội bộ.
  *
  * Bốn lớp, cấu hình trong config/services.php (chatbot.*):
- *  - Mỗi phút toàn hệ thống   (mặc định 8,  thấp hơn trần ~10 RPM của gói free)
- *  - Mỗi ngày toàn hệ thống   (mặc định 800, thấp hơn trần ~1.000 RPD)
- *  - Mỗi ngày cho MỘT khách   (mặc định 30 - một người không thể "ăn" hết hạn mức)
+ *  - Mỗi phút toàn hệ thống   (mặc định 4 - trần gói free chỉ khoảng 5)
+ *  - Mỗi ngày toàn hệ thống   (mặc định 18 - trần gói free có model chỉ 20/ngày)
+ *  - Mỗi ngày cho MỘT khách   (mặc định 5 - một người không thể "ăn" hết hạn mức)
  *  - "Cầu dao": Google báo 429/403 thì ngừng gọi một lúc thay vì gọi tiếp vô ích
  *
  * Ngày được tính theo giờ Thái Bình Dương (America/Los_Angeles) - đúng mốc
@@ -44,15 +44,15 @@ class LlmQuota
             return self::DENY_COOLDOWN;
         }
 
-        if ($this->count($this->minuteKey()) >= $this->limit('rpm', 8)) {
+        if ($this->count($this->minuteKey()) >= $this->limit('rpm', 4)) {
             return self::DENY_MINUTE;
         }
 
-        if ($this->count($this->dayKey()) >= $this->limit('rpd', 800)) {
+        if ($this->count($this->dayKey()) >= $this->limit('rpd', 18)) {
             return self::DENY_DAY;
         }
 
-        if ($this->count($this->clientKey($clientKey)) >= $this->limit('per_client_day', 30)) {
+        if ($this->count($this->clientKey($clientKey)) >= $this->limit('per_client_day', 5)) {
             return self::DENY_CLIENT;
         }
 
@@ -105,10 +105,10 @@ class LlmQuota
     {
         return [
             'today' => $this->count($this->dayKey()),
-            'day_limit' => $this->limit('rpd', 800),
+            'day_limit' => $this->limit('rpd', 18),
             'minute' => $this->count($this->minuteKey()),
-            'minute_limit' => $this->limit('rpm', 8),
-            'per_client_limit' => $this->limit('per_client_day', 30),
+            'minute_limit' => $this->limit('rpm', 4),
+            'per_client_limit' => $this->limit('per_client_day', 5),
             'cooldown' => $this->cooldownSeconds(),
             'last_error' => Cache::get('chatbot:llm:last_error'),
             'reset_in' => $this->secondsUntilDailyReset(),
