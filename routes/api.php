@@ -19,7 +19,12 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
 });
 
 // Vận hành trên Render: kiểm tra sức khỏe + việc hằng ngày (xem SystemController)
-Route::get('/healthz', [\App\Http\Controllers\SystemController::class, 'health'])->name('system.health');
+// Bỏ throttle cho health check: bộ đếm throttle lưu trong cache (MySQL), nếu
+// để nguyên thì CSDL trục trặc là health check cũng hỏng -> Render tưởng web
+// chết và không cho deploy xong. Health check phải độc lập với CSDL.
+Route::get('/healthz', [\App\Http\Controllers\SystemController::class, 'health'])
+    ->withoutMiddleware('throttle:api')
+    ->name('system.health');
 Route::get('/cron/daily', [\App\Http\Controllers\SystemController::class, 'daily'])
     ->middleware('throttle:10,1')
     ->name('system.cron-daily');
