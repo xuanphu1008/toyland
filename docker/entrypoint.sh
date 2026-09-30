@@ -12,14 +12,29 @@ echo "[toyland] Khởi động ($(date '+%Y-%m-%d %H:%M:%S'))"
 # Cách 1 (khuyên dùng trên Render): Secret File "ca.pem" -> /etc/secrets/ca.pem
 #          và đặt MYSQL_ATTR_SSL_CA=/etc/secrets/ca.pem
 # Cách 2 (tiện khi chạy docker trên máy): dán nguyên nội dung PEM vào DB_CA_CERT
-if [ -n "$DB_CA_CERT" ] && [ -z "$MYSQL_ATTR_SSL_CA" ]; then
+# Cách 2 chỉ được dùng khi cách 1 không có file (hoặc không khai đường dẫn).
+if [ -n "$DB_CA_CERT" ] && { [ -z "$MYSQL_ATTR_SSL_CA" ] || [ ! -r "$MYSQL_ATTR_SSL_CA" ]; }; then
     printf '%s\n' "$DB_CA_CERT" > /tmp/db-ca.pem
     export MYSQL_ATTR_SSL_CA=/tmp/db-ca.pem
+    echo "[toyland] Dùng chứng chỉ CA từ biến DB_CA_CERT."
 fi
 
 if [ -n "$MYSQL_ATTR_SSL_CA" ] && [ ! -r "$MYSQL_ATTR_SSL_CA" ]; then
     echo "[toyland] LỖI: không đọc được file CA tại $MYSQL_ATTR_SSL_CA" >&2
-    echo "[toyland]      Kiểm tra lại Secret File trên Render (tên file phải là ca.pem)." >&2
+    # In ra TÊN các file bí mật đang có (không in nội dung) để thấy ngay đặt sai tên hay chưa thêm
+    if [ -d /etc/secrets ] && [ -n "$(ls -A /etc/secrets 2>/dev/null)" ]; then
+        echo "[toyland]      Các Secret File đang có trong /etc/secrets: $(ls -A /etc/secrets | tr '\n' ' ')" >&2
+        echo "[toyland]      -> Đổi tên Secret File thành đúng 'ca.pem'." >&2
+    else
+        echo "[toyland]      Chưa có Secret File nào. Vào service toyland -> Environment -> Secret Files" >&2
+        echo "[toyland]      -> Add Secret File, Filename: ca.pem, dán nội dung file CA của Aiven." >&2
+    fi
+    exit 1
+fi
+
+if [ -n "$MYSQL_ATTR_SSL_CA" ] && ! grep -q -- "-----BEGIN CERTIFICATE-----" "$MYSQL_ATTR_SSL_CA"; then
+    echo "[toyland] LỖI: $MYSQL_ATTR_SSL_CA không phải chứng chỉ PEM (thiếu dòng -----BEGIN CERTIFICATE-----)." >&2
+    echo "[toyland]      Mở file ca.pem tải từ Aiven bằng Notepad, chép TOÀN BỘ nội dung dán lại vào Secret File." >&2
     exit 1
 fi
 
