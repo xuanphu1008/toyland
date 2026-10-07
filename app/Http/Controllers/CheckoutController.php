@@ -15,6 +15,7 @@ use App\Models\OrderStatusLog;
 use App\Services\GHNOrderService;
 use App\Services\GHNService;
 use App\Services\MomoService;
+use App\Services\Orders\OrderWorkflow;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -80,6 +81,10 @@ class CheckoutController extends Controller
         if (empty($cart)) {
             return redirect()->route('cart.index')->with('error', 'Giỏ hàng của bạn đang trống.');
         }
+
+        // Trả về kho những món đang bị giữ bởi đơn MoMo quá hạn chưa thanh toán,
+        // TRƯỚC khi kiểm tra tồn kho cho đơn này.
+        app(OrderWorkflow::class)->releaseExpired(true);
 
         $request->validate([
             'address_id' => 'nullable|exists:user_addresses,id',
@@ -165,12 +170,20 @@ class CheckoutController extends Controller
 
                 $totalPrice = max(0, $subtotal - $discountTotal) + $shippingFee;
 
+                // COD: vào thẳng hàng chờ shop xác nhận.
+                // MoMo: GIỮ HÀNG (đã trừ kho bên dưới) trong 30 phút chờ khách trả tiền;
+                // quá hạn thì OrderWorkflow::releaseExpired() tự hủy và trả kho.
+                $isMomo = $request->payment_method === 'momo';
+                $workflow = app(OrderWorkflow::class);
+
                 $order = Order::create([
                     'user_id' => $user->id,
                     'total_price' => $totalPrice,
-                    'status' => 'pending',
+                    'status' => $isMomo ? 'awaiting_payment' : 'pending',
                     'payment_method' => $request->payment_method,
                     'payment_status' => 'pending',
+                    'payment_expires_at' => $isMomo ? now()->addMinutes($workflow->holdMinutes()) : null,
+                    'shipping_status' => 'not_shipped',
                     'shipping_address' => "{$name} | {$phone} | {$addressText}",
                     'customer_phone' => $phone,
                     'to_district_id' => $destination['district_id'],
@@ -240,8 +253,10 @@ class CheckoutController extends Controller
             'order_id' => $order->id,
             'changed_by' => Auth::id(),
             'from_status' => null,
-            'to_status' => 'pending',
-            'note' => 'Khách hàng đặt hàng thành công',
+            'to_status' => $order->status,
+            'note' => $order->status === 'awaiting_payment'
+                ? '[Khách] Đặt hàng, chờ thanh toán MoMo (giữ hàng tới ' . $order->payment_expires_at->format('H:i d/m') . ')'
+                : '[Khách] Đặt hàng thành công (COD)',
         ]);
 
         // Email xác nhận đơn hàng. Bọc try/catch để SMTP lỗi không làm hỏng việc đặt hàng.

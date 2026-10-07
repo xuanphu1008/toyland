@@ -438,7 +438,7 @@ class Product extends Model
         return $query->withSum([
             'orderItems as sold_quantity' => function ($q) {
                 $q->whereHas('order', function ($order) {
-                    $order->where('status', '!=', 'cancelled');
+                    $order->whereNotIn('status', Order::EXCLUDED_FROM_SALES);
                 });
             },
         ], 'quantity');

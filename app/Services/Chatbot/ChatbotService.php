@@ -256,11 +256,25 @@ class ChatbotService
             $lines[] = '• Gồm ' . $itemCount . ' món: ' . $names . ($itemCount > 3 ? '...' : '');
         }
 
-        if ($order->status === 'shipping') {
-            $lines[] = "\nĐơn đang trên đường tới bạn rồi nhé!";
-        } elseif ($order->status === 'pending') {
-            $lines[] = "\nShop sẽ xác nhận đơn trong vài giờ tới.";
+        if ($order->ghn_order_code) {
+            $lines[] = '• Mã vận đơn: ' . $order->ghn_order_code . ' (' . $order->shipping_label . ')';
         }
+
+        $lines[] = match ($order->status) {
+            'awaiting_payment' => "\nĐơn đang chờ bạn thanh toán MoMo"
+                . ($order->payment_expires_at ? ' trước ' . $order->payment_expires_at->format('H:i') : '')
+                . ', quá hạn đơn sẽ tự hủy.',
+            'pending' => "\nShop sẽ xác nhận đơn trong vài giờ tới.",
+            'confirmed' => "\nShop đang chuẩn bị và đóng gói hàng cho bạn.",
+            'packed' => "\nĐơn đã đóng gói, đang chờ đơn vị vận chuyển tới lấy.",
+            'shipping' => $order->shipping_status === 'delivery_fail'
+                ? "\nShipper chưa giao được lần trước, shop sẽ liên hệ để giao lại."
+                : "\nĐơn đang trên đường tới bạn rồi nhé!",
+            'returning', 'returned' => "\nĐơn không giao được và được hoàn về shop."
+                . ($order->payment_status === 'refund_pending' ? ' Shop sẽ hoàn tiền cho bạn.' : ''),
+            default => '',
+        };
+        $lines = array_values(array_filter($lines, fn ($l) => $l !== ''));
 
         return $this->answer(
             implode("\n", $lines),

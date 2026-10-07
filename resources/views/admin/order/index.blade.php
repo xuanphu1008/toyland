@@ -30,12 +30,14 @@ $paymentColor = [
     'refunded' => 'bg-secondary',
 ];
 
-$shippingColor = [];
-foreach ($tabs as $tabKey => $tabInfo) {
-    foreach ($tabInfo['statuses'] as $st) {
-        $shippingColor[$st] = $colorClass[$tabInfo['color']] ?? 'bg-secondary';
-    }
-}
+$shippingColor = [
+    'not_shipped' => 'bg-secondary', 'pending' => 'bg-secondary', 'processing' => 'bg-secondary',
+    'ready_to_pick' => 'bg-info text-dark', 'picking' => 'bg-info text-dark', 'picked' => 'bg-primary',
+    'storing' => 'bg-primary', 'transporting' => 'bg-primary', 'sorting' => 'bg-primary',
+    'delivering' => 'bg-warning text-dark', 'delivery_fail' => 'bg-danger', 'delivered' => 'bg-success',
+    'return' => 'badge-orange', 'returning' => 'badge-orange', 'return_transporting' => 'badge-orange',
+    'return_sorting' => 'badge-orange', 'returned' => 'bg-dark', 'cancelled' => 'bg-danger',
+];
 @endphp
 
 <div class="d-flex justify-content-between align-items-end flex-wrap gap-2 mb-4">
@@ -48,7 +50,7 @@ foreach ($tabs as $tabKey => $tabInfo) {
     </a>
 </div>
 
-{{-- Tabs theo trạng thái vận chuyển --}}
+{{-- Tabs theo trạng thái đơn: mỗi tab là một hàng chờ việc --}}
 <div class="tl-tabs mb-4">
     @foreach ($tabs as $tabKey => $tabInfo)
     <a class="tl-tab {{ $activeTab === $tabKey ? 'active' : '' }}"
@@ -127,12 +129,36 @@ foreach ($tabs as $tabKey => $tabInfo) {
     </div>
 </form>
 
+@if ($errors->any())
+<div class="alert alert-danger"><i class="bi bi-exclamation-triangle-fill me-1"></i> {{ $errors->first() }}</div>
+@endif
+
+{{-- ============ XỬ LÝ HÀNG LOẠT ============ --}}
+<form id="bulk-form" action="{{ route('admin.orders.bulk') }}" method="POST"
+      onsubmit="return tlBulkConfirm(this)">
+    @csrf
 <div class="card border-0 shadow-sm rounded-4 p-3">
     <div class="card-body">
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-3 p-2 rounded-3 bg-light">
+            <span class="small fw-semibold"><span id="bulk-count">0</span> đơn đã chọn</span>
+            <select name="action" id="bulk-action" class="form-select form-select-sm w-auto" required>
+                <option value="">— Chọn thao tác —</option>
+                @foreach ($bulkActions as $value => $label)
+                <option value="{{ $value }}">{{ $label }}</option>
+                @endforeach
+            </select>
+            <input type="text" name="cancel_reason" id="bulk-reason" maxlength="255"
+                   class="form-control form-control-sm w-auto d-none" placeholder="Lý do hủy (bắt buộc)">
+            <button type="submit" class="btn btn-sm btn-primary" id="bulk-submit" disabled>Thực hiện</button>
+            <span class="small text-muted ms-auto">
+                Đơn nào không đúng bước sẽ được bỏ qua và báo lý do. Tối đa {{ \App\Services\Orders\OrderWorkflow::BULK_LIMIT }} đơn/lần.
+            </span>
+        </div>
         <div class="table-responsive">
             <table class="table table-hover align-middle text-center">
                 <thead class="table-light">
                     <tr>
+                        <th style="width:36px"><input type="checkbox" class="form-check-input" id="bulk-all" title="Chọn cả trang"></th>
                         <th>#</th>
                         <th class="text-start">Khách hàng</th>
                         <th class="text-start">Sản phẩm</th>
@@ -147,6 +173,7 @@ foreach ($tabs as $tabKey => $tabInfo) {
                 <tbody>
                     @forelse ($orders as $order)
                     <tr>
+                        <td><input type="checkbox" class="form-check-input bulk-item" name="ids[]" value="{{ $order->id }}"></td>
                         <td class="fw-bold">#{{ $order->id }}</td>
                         <td class="text-start">
                             <div class="fw-semibold text-dark">{{ $order->user->name ?? 'Khách vãng lai' }}</div>
@@ -166,6 +193,9 @@ foreach ($tabs as $tabKey => $tabInfo) {
                         <td class="text-danger fw-bold text-nowrap">{{ number_format($order->total_price, 0, ',', '.') }} đ</td>
                         <td>
                             <span class="badge {{ $order->status_color }}">{{ $order->status_label }}</span>
+                            @if ($order->status === 'awaiting_payment' && $order->payment_expires_at)
+                            <div class="small text-muted mt-1">Giữ hàng tới {{ \Carbon\Carbon::parse($order->payment_expires_at)->format('H:i') }}</div>
+                            @endif
                         </td>
                         <td>
                             <span class="badge {{ $paymentColor[$order->payment_status] ?? 'bg-secondary' }}">
@@ -177,6 +207,9 @@ foreach ($tabs as $tabKey => $tabInfo) {
                             <span class="badge {{ $shippingColor[$order->shipping_status] ?? 'bg-secondary' }}">
                                 {{ $shippingLabels[$order->shipping_status] ?? $order->shipping_status }}
                             </span>
+                            @if ($order->ghn_order_code)
+                            <div class="small text-muted mt-1 font-monospace">{{ $order->ghn_order_code }}</div>
+                            @endif
                         </td>
                         <td class="text-nowrap">{{ \Carbon\Carbon::parse($order->created_at)->format('d/m/Y H:i') }}</td>
                         <td>
@@ -187,7 +220,7 @@ foreach ($tabs as $tabKey => $tabInfo) {
                     </tr>
                     @empty
                     <tr>
-                        <td colspan="9" class="text-muted py-4">Không tìm thấy đơn hàng nào phù hợp.</td>
+                        <td colspan="10" class="text-muted py-4">Không tìm thấy đơn hàng nào phù hợp.</td>
                     </tr>
                     @endforelse
                 </tbody>
@@ -199,4 +232,34 @@ foreach ($tabs as $tabKey => $tabInfo) {
         </div>
     </div>
 </div>
+</form>
+
+<script>
+(function () {
+    const all = document.getElementById('bulk-all');
+    const items = () => Array.from(document.querySelectorAll('.bulk-item'));
+    const action = document.getElementById('bulk-action');
+    const reason = document.getElementById('bulk-reason');
+    const submit = document.getElementById('bulk-submit');
+    const count = document.getElementById('bulk-count');
+
+    function refresh() {
+        const n = items().filter(i => i.checked).length;
+        count.textContent = n;
+        submit.disabled = n === 0 || !action.value;
+        reason.classList.toggle('d-none', action.value !== 'cancel');
+        reason.required = action.value === 'cancel';
+    }
+
+    all && all.addEventListener('change', () => { items().forEach(i => i.checked = all.checked); refresh(); });
+    items().forEach(i => i.addEventListener('change', refresh));
+    action.addEventListener('change', refresh);
+
+    window.tlBulkConfirm = function (form) {
+        const n = items().filter(i => i.checked).length;
+        const label = action.options[action.selectedIndex].text;
+        return confirm(label + ' cho ' + n + ' đơn đã chọn?');
+    };
+})();
+</script>
 @endsection

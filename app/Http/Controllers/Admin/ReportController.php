@@ -19,7 +19,7 @@ class ReportController extends Controller
             ->orderByDesc('id')->limit(1);
 
         return Order::query()->where('orders.created_at', '<=', now())
-            ->where('orders.status', '!=', 'cancelled')
+            ->whereNotIn('orders.status', \App\Models\Order::EXCLUDED_FROM_SALES)
             ->whereNotIn('orders.shipping_status', ['cancelled', 'return', 'returned'])
             ->where(function (Builder $query) use ($paymentStatus) {
                 $query->where($paymentStatus, 'paid')

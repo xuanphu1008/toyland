@@ -32,4 +32,15 @@ return [
 
     // Ép mọi URL sinh ra dùng https (Render đứng sau proxy https)
     'force_https' => env('FORCE_HTTPS', false),
+
+    // ---- Luồng đơn hàng (App\Services\Orders\OrderWorkflow) ----
+    'orders' => [
+        // Đơn MoMo được giữ hàng (đã trừ kho) trong ngần này phút chờ khách trả tiền
+        'payment_hold_minutes' => (int) env('ORDER_PAYMENT_HOLD_MINUTES', 30),
+        // Giao thất bại quá số lần này thì chỉ còn cách chuyển hoàn
+        'max_delivery_attempts' => (int) env('ORDER_MAX_DELIVERY_ATTEMPTS', 3),
+    ],
+
+    // Đơn vị vận chuyển: simulated (mô phỏng, quản trị viên đóng vai shipper) | ghn
+    'shipping_carrier' => env('SHIPPING_CARRIER', 'simulated'),
 ];

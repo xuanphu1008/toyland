@@ -100,6 +100,9 @@
             <a class="nav-link {{ request()->routeIs('admin.orders.*') ? 'active' : '' }}" href="{{ route('admin.orders.index') }}">
                 <i class="bi bi-receipt me-2"></i> Đơn hàng
             </a>
+            <a class="nav-link {{ request()->routeIs('admin.carrier.*') ? 'active' : '' }}" href="{{ route('admin.carrier.index') }}">
+                <i class="bi bi-truck me-2"></i> Đơn vị vận chuyển
+            </a>
             <a class="nav-link {{ request()->routeIs('admin.products.*') ? 'active' : '' }}" href="{{ route('admin.products.index') }}">
                 <i class="bi bi-box-seam me-2"></i> Sản phẩm
             </a>

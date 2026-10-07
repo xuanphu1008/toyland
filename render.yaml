@@ -131,6 +131,12 @@ services:
       - key: GOOGLE_REDIRECT_URI
         sync: false            # https://<dia-chi-render>/auth/google/callback
 
+      # --- Luồng đơn hàng ---
+      - key: SHIPPING_CARRIER
+        value: simulated       # simulated (quản trị viên đóng vai bên giao hàng) | ghn
+      - key: ORDER_PAYMENT_HOLD_MINUTES
+        value: "30"            # giữ hàng cho đơn MoMo chờ thanh toán
+
       # --- Chatbot: AI bổ trợ Gemini (bot nội bộ vẫn chạy đủ khi AI tắt/hết lượt) ---
       - key: CHATBOT_LLM_DRIVER
         value: gemini

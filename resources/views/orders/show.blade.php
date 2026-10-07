@@ -43,9 +43,17 @@
             <h6 class="fw-bold text-secondary mb-4">Tiến trình đơn hàng</h6>
 
             @php
-            // Các mốc chuẩn của 1 đơn hàng; nếu đơn bị hủy thì hiển thị riêng
+            // Các mốc chuẩn của 1 đơn hàng. Đơn MoMo có thêm bước "Chờ thanh toán"
+            // ở đầu; đơn bị hoàn thì rẽ nhánh sang "Đang hoàn" -> "Đã hoàn".
             $flow = ['pending', 'confirmed', 'packed', 'shipping', 'completed'];
+            if ($order->payment_method === 'momo') {
+                array_unshift($flow, 'awaiting_payment');
+            }
+            if (in_array($order->status, ['returning', 'returned'], true)) {
+                $flow = array_merge(array_slice($flow, 0, array_search('completed', $flow, true)), ['returning', 'returned']);
+            }
             $currentIndex = array_search($order->status, $flow, true);
+            $firstLog = $statusLogs->first();
             @endphp
 
             @if ($order->isCancelled())
@@ -76,10 +84,16 @@
                     <div class="fw-semibold {{ $state === 'todo' ? 'text-muted' : '' }}">
                         {{ \App\Models\Order::STATUSES[$step] }}
                     </div>
-                    @if ($step === 'pending')
-                    <div class="text-muted small">{{ $order->created_at->format('d/m/Y H:i') }}</div>
-                    @elseif ($log)
+                    @if ($log)
                     <div class="text-muted small">{{ $log->created_at->format('d/m/Y H:i') }}</div>
+                    @elseif ($index === 0)
+                    <div class="text-muted small">{{ $order->created_at->format('d/m/Y H:i') }}</div>
+                    @endif
+                    @if ($step === 'awaiting_payment' && $state === 'current' && $order->payment_expires_at)
+                    <div class="small text-danger">Thanh toán trước {{ $order->payment_expires_at->format('H:i d/m') }}, quá hạn đơn tự hủy.</div>
+                    @endif
+                    @if ($step === 'shipping' && $order->delivery_attempts > 0 && in_array($state, ['current', 'done'], true))
+                    <div class="small text-muted">Đã giao {{ $order->delivery_attempts }} lần{{ $order->shipping_status === 'delivery_fail' ? ' — chưa thành công' : '' }}{{ $order->last_delivery_note ? ': ' . $order->last_delivery_note : '' }}</div>
                     @endif
                 </li>
                 @endforeach
@@ -88,7 +102,9 @@
 
             @if ($order->ghn_order_code)
             <div class="alert alert-info border-0 rounded-3 small mt-3 mb-0">
-                Mã vận đơn GHN: <span class="fw-bold">{{ $order->ghn_order_code }}</span>
+                Mã vận đơn: <span class="fw-bold font-monospace">{{ $order->ghn_order_code }}</span>
+                <span class="text-muted">({{ $order->carrier === 'ghn' ? 'Giao Hàng Nhanh' : 'ToyLand Express' }})</span>
+                <br>Trạng thái vận chuyển: <strong>{{ $order->shipping_label }}</strong>
             </div>
             @endif
         </div>

@@ -102,7 +102,7 @@ class ExportController extends Controller
             ->selectRaw('COUNT(*) as so_don')
             ->selectRaw('SUM(total_price) as doanh_thu')
             ->selectRaw('SUM(discount_amount) as giam_gia')
-            ->where('status', '!=', 'cancelled')
+            ->whereNotIn('status', \App\Models\Order::EXCLUDED_FROM_SALES)
             ->when($filters['from'] ?? null, fn ($q, $d) => $q->whereDate('created_at', '>=', $d))
             ->when($filters['to'] ?? null, fn ($q, $d) => $q->whereDate('created_at', '<=', $d))
             ->groupByRaw('CAST(created_at AS DATE)')
@@ -157,7 +157,7 @@ class ExportController extends Controller
     public function customers()
     {
         $makeQuery = fn () => User::where('role', '!=', 'admin')
-            ->withCount(['orders as so_don' => fn ($q) => $q->where('status', '!=', 'cancelled')]);
+            ->withCount(['orders as so_don' => fn ($q) => $q->whereNotIn('status', \App\Models\Order::EXCLUDED_FROM_SALES)]);
 
         $headers = [
             'ID', 'Họ tên', 'Email', 'Ngày đăng ký', 'Số đơn',

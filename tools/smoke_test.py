@@ -150,6 +150,8 @@ admin_pages = ["/admin", "/admin/products", "/admin/products/create", "/admin/ca
                "/admin/xuat-du-lieu", "/admin/so-sinh-nhat", "/admin/chatbot", "/admin/finance",
                "/admin/finance/transactions", "/admin/chat/users",
                "/admin/orders?tab=pending", "/admin/orders?sort=amount_desc&gateway=cod",
+               "/admin/orders?tab=awaiting", "/admin/orders?tab=return", "/admin/van-chuyen",
+               "/admin/van-chuyen?tab=delivering", "/admin/van-chuyen?tab=returning", "/admin/van-chuyen?tab=done",
                "/admin/finance?min_amount=0&max_amount=99999999", "/admin/finance/transactions?sort=amount_desc&payment_status=pending"]
 for p in admin_pages:
     hit(a, "admin", "GET", p)
@@ -180,8 +182,12 @@ for oid in order_ids[:1]:
     hit(a, "admin", "GET", f"/admin/orders/{oid}")
     hit(a, "admin", "GET", f"/admin/orders/{oid}/hoa-don")
     at = csrf(a, f"/admin/orders/{oid}")
-    for st in ["confirmed", "packed", "shipping", "completed"]:
-        hit(a, "admin", "POST", f"/admin/orders/{oid}/status", data={"_token": at, "_method": "PATCH", "status": st})
+    # Shop: xác nhận -> đóng gói (tạo mã vận đơn); Bên vận chuyển: lấy hàng -> đi giao -> giao thành công
+    for act in ["confirm", "pack"]:
+        hit(a, "admin", "POST", f"/admin/orders/{oid}/status", data={"_token": at, "_method": "PATCH", "action": act})
+    hit(a, "admin", "GET", f"/admin/orders/phieu-giao-hang?ids={oid}")
+    for act in ["pick", "out_for_delivery", "deliver"]:
+        hit(a, "admin", "POST", f"/admin/van-chuyen/{oid}", data={"_token": at, "action": act})
     fin = a.get(BASE + "/admin/finance/transactions", timeout=60).text
     m = re.search(rf'/admin/finance/{oid}/status".*?name="current_payment_status" value="([^"]*)".*?'
                   rf'name="current_order_status" value="([^"]*)".*?name="current_payment_id" value="([^"]*)"', fin, re.S)

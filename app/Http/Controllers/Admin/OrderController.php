@@ -18,36 +18,34 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rule;
+use App\Services\Orders\OrderWorkflow;
+use App\Services\Orders\WorkflowException;
 use Throwable;
 
 class OrderController extends Controller
 {
+    /**
+     * Các tab theo TRẠNG THÁI ĐƠN - mỗi tab là một "hàng chờ" việc của shop.
+     */
     private const TABS = [
         'all' => ['label' => 'Tất cả', 'color' => 'blue', 'statuses' => []],
-        'pending' => ['label' => 'Chờ xử lý', 'color' => 'slate', 'statuses' => ['pending', 'not_shipped', 'processing']],
-        'ready' => ['label' => 'Chờ lấy hàng', 'color' => 'cyan', 'statuses' => ['ready_to_pick']],
-        'picking' => ['label' => 'Đang lấy hàng', 'color' => 'cyan', 'statuses' => ['picking']],
-        'delivering' => ['label' => 'Đang giao', 'color' => 'amber', 'statuses' => ['delivering', 'picked', 'storing', 'transporting', 'sorting']],
-        'delivered' => ['label' => 'Thành công', 'color' => 'green', 'statuses' => ['delivered']],
-        'return' => ['label' => 'Hoàn hàng', 'color' => 'orange', 'statuses' => ['return', 'returning', 'returned', 'return_transporting', 'return_sorting']],
+        'awaiting' => ['label' => 'Chờ thanh toán', 'color' => 'amber', 'statuses' => ['awaiting_payment']],
+        'pending' => ['label' => 'Chờ xác nhận', 'color' => 'slate', 'statuses' => ['pending']],
+        'confirmed' => ['label' => 'Chờ đóng gói', 'color' => 'cyan', 'statuses' => ['confirmed']],
+        'ready' => ['label' => 'Chờ lấy hàng', 'color' => 'cyan', 'statuses' => ['packed']],
+        'delivering' => ['label' => 'Đang giao', 'color' => 'amber', 'statuses' => ['shipping']],
+        'delivered' => ['label' => 'Thành công', 'color' => 'green', 'statuses' => ['completed']],
+        'return' => ['label' => 'Hoàn hàng', 'color' => 'orange', 'statuses' => ['returning', 'returned']],
         'cancelled' => ['label' => 'Đã hủy', 'color' => 'red', 'statuses' => ['cancelled']],
     ];
 
     public function index(Request $request)
     {
-        $paymentLabels = [
-            'pending' => 'Chờ thanh toán', 'initiated' => 'Đang chờ MoMo', 'paid' => 'Đã thanh toán',
-            'failed' => 'Thanh toán thất bại', 'cancelled' => 'Đã hủy',
-            'refund_pending' => 'Chờ hoàn tiền', 'refunded' => 'Đã hoàn tiền',
-        ];
-        $shippingLabels = [
-            'pending' => 'Chờ tạo vận đơn', 'not_shipped' => 'Chưa giao hàng', 'processing' => 'Đang tạo vận đơn',
-            'ready_to_pick' => 'Chờ lấy hàng', 'picking' => 'Đang lấy hàng', 'picked' => 'Đã lấy hàng',
-            'storing' => 'Đang lưu kho', 'transporting' => 'Đang trung chuyển', 'sorting' => 'Đang phân loại',
-            'delivering' => 'Đang giao hàng', 'delivered' => 'Giao hàng thành công',
-            'return' => 'Chờ hoàn hàng', 'returning' => 'Đang hoàn hàng', 'returned' => 'Đã hoàn hàng',
-            'return_transporting' => 'Đang chuyển hoàn', 'return_sorting' => 'Đang phân loại hoàn', 'cancelled' => 'Đã hủy',
-        ];
+        // Hủy các đơn MoMo quá hạn giữ hàng để danh sách phản ánh đúng
+        app(OrderWorkflow::class)->releaseExpired();
+
+        $paymentLabels = Order::PAYMENT_LABELS;
+        $shippingLabels = Order::SHIPPING_LABELS;
 
         // Trạng thái đơn hợp lệ = bộ chuẩn mới + các giá trị cũ còn sót trong DB
         $orderStatuses = array_merge(array_keys(Order::STATUSES), Order::LEGACY_STATUSES);
@@ -81,6 +79,7 @@ class OrderController extends Controller
                 'orders.payment_method', 'orders.shipping_address', 'orders.customer_phone',
                 'orders.shipping_status', 'orders.ghn_order_code', 'orders.ghn_total_fee',
                 'orders.to_district_id', 'orders.to_ward_code', 'orders.created_at', 'orders.updated_at',
+                'orders.payment_expires_at', 'orders.carrier', 'orders.delivery_attempts', 'orders.last_delivery_note',
             ])
             ->selectRaw("COALESCE(payment.gateway, CASE WHEN orders.status IN ('cod_ordered', 'cod_paid') THEN 'cod' WHEN orders.status IN ('paid', 'paid_momo') THEN 'momo' ELSE 'unknown' END) as gateway")
             ->selectRaw("COALESCE(payment.status, CASE WHEN orders.status = 'cod_ordered' THEN 'pending' WHEN orders.status IN ('cod_paid', 'paid_momo') THEN 'paid' ELSE orders.status END) as payment_status");
@@ -114,17 +113,17 @@ class OrderController extends Controller
             $query->where('created_at', '<', Carbon::parse($filters['date_to'])->addDay()->startOfDay());
         }
 
-        $shippingCounts = (clone $query)->select('shipping_status')->selectRaw('COUNT(*) as total')
-            ->groupBy('shipping_status')->pluck('total', 'shipping_status');
+        $statusCounts = (clone $query)->select('status')->selectRaw('COUNT(*) as total')
+            ->groupBy('status')->pluck('total', 'status');
 
-        $tabs = collect(self::TABS)->map(function ($tab, $key) use ($shippingCounts) {
-            $tab['count'] = $key === 'all' ? $shippingCounts->sum() : collect($tab['statuses'])->sum(fn ($status) => $shippingCounts->get($status, 0));
+        $tabs = collect(self::TABS)->map(function ($tab, $key) use ($statusCounts) {
+            $tab['count'] = $key === 'all' ? $statusCounts->sum() : collect($tab['statuses'])->sum(fn ($status) => $statusCounts->get($status, 0));
             return $tab;
         });
 
         $activeTab = $filters['tab'] ?? 'all';
         if ($activeTab !== 'all') {
-            $query->whereIn('shipping_status', self::TABS[$activeTab]['statuses']);
+            $query->whereIn('status', self::TABS[$activeTab]['statuses']);
         }
         if ($request->filled('shipping_status')) {
             $query->where('shipping_status', $filters['shipping_status']);
@@ -142,8 +141,12 @@ class OrderController extends Controller
 
         $orderStatusLabels = Order::STATUSES;
 
+        $bulkActions = collect(OrderWorkflow::BULK_ACTIONS['admin'])
+            ->mapWithKeys(fn ($a) => [$a => OrderWorkflow::ACTIONS[$a]['label']])
+            ->put('print', 'In phiếu giao hàng');
+
         return view('admin.order.index', compact(
-            'orders', 'filters', 'tabs', 'activeTab', 'paymentLabels', 'shippingLabels', 'orderStatusLabels'
+            'orders', 'filters', 'tabs', 'activeTab', 'paymentLabels', 'shippingLabels', 'orderStatusLabels', 'bulkActions'
         ));
     }
 
@@ -161,7 +164,11 @@ class OrderController extends Controller
             ->orderBy('id')
             ->get();
 
-        return view('admin.order.show', compact('order', 'statusLogs'));
+        $workflow = app(OrderWorkflow::class);
+        $adminActions = $workflow->available($order, 'admin');
+        $carrierActions = $workflow->available($order, 'carrier');
+
+        return view('admin.order.show', compact('order', 'statusLogs', 'adminActions', 'carrierActions'));
     }
 
     /**
@@ -182,127 +189,53 @@ class OrderController extends Controller
         ));
     }
 
+    /**
+     * Shop thao tác trên MỘT đơn: xác nhận / đóng gói (tạo mã vận đơn) / nhận lại hàng hoàn.
+     * Mọi kiểm tra và việc đi kèm nằm trong OrderWorkflow.
+     */
     public function updateStatus(Request $request, $id)
     {
-        $order = Order::with('items')->findOrFail($id);
-
         $data = $request->validate([
-            'status' => ['required', Rule::in(['pending', 'confirmed', 'packed', 'shipping', 'completed'])],
+            'action' => ['required', Rule::in(['confirm', 'pack', 'confirm_returned'])],
             'admin_note' => ['nullable', 'string', 'max:500'],
         ]);
 
-        if ($order->isCancelled()) {
-            return back()->with('error', 'Đơn hàng đã bị hủy, không thể đổi trạng thái.');
-        }
-
-        $from = $order->status;
-        $to = $data['status'];
-
-        if ($from === $to && ! $request->filled('admin_note')) {
-            return back()->with('error', 'Trạng thái không thay đổi.');
-        }
-
-        DB::transaction(function () use ($order, $from, $to, $data) {
-            $order->status = $to;
-            $order->shipping_status = Order::STATUS_TO_SHIPPING[$to] ?? $order->shipping_status;
-
-            if ($data['admin_note'] ?? null) {
-                $order->admin_note = $data['admin_note'];
-            }
-
-            // Đơn COD khi giao thành công thì coi như đã thu đủ tiền
-            if ($to === 'completed' && $order->payment_method === 'cod' && ! $order->isPaid()) {
-                $order->payment_status = 'paid';
-
-                PaymentTransaction::where('order_id', $order->id)
-                    ->where('gateway', 'cod')
-                    ->where('status', 'pending')
-                    ->update([
-                        'status' => 'paid',
-                        'paid_at' => now(),
-                        'message' => 'Đã thu tiền khi giao hàng',
-                    ]);
-            }
-
-            // Đơn giao thành công -> cộng điểm thưởng & cập nhật tổng chi tiêu để xét hạng
-            if ($to === 'completed' && $order->points_earned <= 0) {
-                $this->awardLoyaltyPoints($order);
-            }
-
-            $order->save();
-
-            OrderStatusLog::create([
-                'order_id' => $order->id,
-                'changed_by' => Auth::id(),
-                'from_status' => $from,
-                'to_status' => $to,
-                'note' => $data['admin_note'] ?? null,
+        try {
+            $order = app(OrderWorkflow::class)->apply((int) $id, $data['action'], 'admin', [
+                'note' => $data['admin_note'] ?? '',
             ]);
-        });
+        } catch (WorkflowException $e) {
+            return back()->with('error', $e->getMessage());
+        }
 
-        $this->notifyCustomer($order, $from);
+        if (! empty($data['admin_note'])) {
+            $order->update(['admin_note' => $data['admin_note']]);
+        }
 
-        return back()->with('success', 'Đã cập nhật đơn hàng #' . $order->id . ' sang trạng thái "' . (Order::STATUSES[$to] ?? $to) . '". Email thông báo đã được gửi cho khách.');
+        $message = 'Đơn #' . $order->id . ' chuyển sang "' . $order->status_label . '".';
+
+        if ($data['action'] === 'pack') {
+            $message .= ' Mã vận đơn: ' . $order->ghn_order_code . '.';
+        }
+
+        return back()->with('success', $message);
     }
 
-    /**
-     * Hủy đơn hàng và HOÀN LẠI TỒN KHO cho từng sản phẩm trong đơn.
-     * Cột restocked_at đảm bảo không bao giờ hoàn kho 2 lần cho cùng 1 đơn.
-     */
+    /** Shop hủy đơn (trước khi bên vận chuyển lấy hàng): trả kho, xử lý tiền, hủy vận đơn nếu có */
     public function cancel(Request $request, $id)
     {
-        $order = Order::with('items')->findOrFail($id);
-
         $data = $request->validate([
             'cancel_reason' => ['required', 'string', 'max:255'],
         ]);
 
-        if (! $order->canBeCancelledByAdmin()) {
-            return back()->with('error', 'Đơn hàng đã giao thành công hoặc đã hủy trước đó, không thể hủy.');
+        try {
+            $order = app(OrderWorkflow::class)->apply((int) $id, 'cancel', 'admin', ['note' => $data['cancel_reason']]);
+        } catch (WorkflowException $e) {
+            return back()->with('error', $e->getMessage());
         }
 
-        DB::transaction(function () use ($order, $data) {
-            $from = $order->status;
-
-            // Hoàn kho: cộng trả số lượng đã trừ lúc đặt hàng
-            if (is_null($order->restocked_at)) {
-                foreach ($order->items as $item) {
-                    Product::where('id', $item->product_id)->increment('quantity', $item->quantity);
-                }
-                $order->restocked_at = now();
-            }
-
-            $order->status = 'cancelled';
-            $order->shipping_status = 'cancelled';
-            $order->cancel_reason = $data['cancel_reason'];
-            $order->cancelled_at = now();
-
-            // Đơn chưa thanh toán -> đánh dấu hủy; đã thanh toán online -> chờ hoàn tiền
-            $order->payment_status = $order->isPaid() ? 'refund_pending' : 'cancelled';
-            $order->save();
-
-            PaymentTransaction::where('order_id', $order->id)
-                ->whereIn('status', ['pending', 'initiated'])
-                ->update(['status' => 'cancelled', 'message' => 'Đơn hàng bị hủy']);
-
-            if ($order->payment_status === 'refund_pending') {
-                PaymentTransaction::where('order_id', $order->id)
-                    ->where('status', 'paid')
-                    ->update(['status' => 'refund_pending', 'message' => 'Đơn bị hủy - chờ hoàn tiền cho khách']);
-            }
-
-            OrderStatusLog::create([
-                'order_id' => $order->id,
-                'changed_by' => Auth::id(),
-                'from_status' => $from,
-                'to_status' => 'cancelled',
-                'note' => 'Lý do: ' . $data['cancel_reason'],
-            ]);
-        });
-
-        $this->notifyCustomer($order, 'cancelled');
-
         $message = 'Đã hủy đơn hàng #' . $order->id . ' và hoàn lại tồn kho.';
+
         if ($order->payment_status === 'refund_pending') {
             $message .= ' Đơn này đã thanh toán online, vui lòng xử lý hoàn tiền cho khách.';
         }
@@ -311,69 +244,76 @@ class OrderController extends Controller
     }
 
     /**
-     * Gửi email thông báo đổi trạng thái cho khách.
-     * Lỗi SMTP chỉ ghi log để không làm hỏng thao tác của admin.
+     * XỬ LÝ HÀNG LOẠT: chọn nhiều đơn ở danh sách rồi xác nhận / đóng gói / hủy /
+     * in phiếu giao hàng. Mỗi đơn xử lý độc lập - đơn nào không hợp lệ thì bỏ qua
+     * và báo lại lý do, không làm hỏng các đơn còn lại.
      */
-    protected function notifyCustomer(Order $order, string $previousStatus): void
+    public function bulk(Request $request)
     {
-        // Thông báo trong ứng dụng trước - không phụ thuộc SMTP nên luôn tới nơi
-        UserNotification::send(
-            $order->user_id,
-            $order->status === 'cancelled' ? 'system' : 'order_status',
-            'Đơn #' . $order->id . ': ' . $order->status_label,
-            match ($order->status) {
-                'confirmed' => 'Shop đã xác nhận đơn, đang chuẩn bị hàng cho bạn.',
-                'packed' => 'Đơn đã đóng gói xong, sắp bàn giao cho đơn vị vận chuyển.',
-                'shipping' => 'Đơn đang trên đường tới bạn. Giữ máy để shipper liên hệ nhé!',
-                'completed' => 'Đơn đã giao thành công. Mời bạn đánh giá sản phẩm để nhận điểm thưởng.',
-                'cancelled' => 'Đơn đã được hủy. Liên hệ 1900 6868 nếu bạn cần hỗ trợ thêm.',
-                default => 'Trạng thái đơn hàng vừa được cập nhật.',
-            },
-            route('orders.show', $order->id)
-        );
+        $data = $request->validate([
+            'ids' => ['required', 'array', 'min:1', 'max:' . OrderWorkflow::BULK_LIMIT],
+            'ids.*' => ['integer'],
+            'action' => ['required', Rule::in(array_merge(OrderWorkflow::BULK_ACTIONS['admin'], ['print']))],
+            'cancel_reason' => ['nullable', 'required_if:action,cancel', 'string', 'max:255'],
+        ], [
+            'ids.required' => 'Hãy tick chọn ít nhất một đơn.',
+            'cancel_reason.required_if' => 'Hủy hàng loạt cần ghi lý do.',
+        ]);
 
-        try {
-            $order->loadMissing('user');
-            $email = $order->user->email ?? null;
-
-            if ($email) {
-                Mail::to($email)->send(new OrderStatusChangedMail($order, $previousStatus));
-            }
-        } catch (Throwable $e) {
-            Log::warning('Không gửi được email cập nhật trạng thái đơn #' . $order->id, [
-                'message' => $e->getMessage(),
-            ]);
+        if ($data['action'] === 'print') {
+            return redirect()->route('admin.orders.labels', ['ids' => implode(',', $data['ids'])]);
         }
+
+        $result = app(OrderWorkflow::class)->bulk($data['ids'], $data['action'], 'admin', [
+            'note' => $data['cancel_reason'] ?? '',
+        ]);
+
+        return back()->with(self::bulkFlash($result, OrderWorkflow::ACTIONS[$data['action']]['label']));
     }
 
     /**
-     * Cộng điểm thưởng cho khách khi đơn giao thành công.
-     * Quy đổi: mỗi 10.000đ giá trị đơn = 1 điểm. Đồng thời cộng dồn lifetime_spent
-     * để hệ thống tự xét lại hạng thành viên (Đồng / Bạc / Vàng / Kim cương).
+     * Phiếu giao hàng để in và dán lên kiện (mã vận đơn, người nhận, tiền thu hộ).
+     * ?ids=1,2,3 - chỉ in được đơn đã có mã vận đơn.
      */
-    protected function awardLoyaltyPoints(Order $order): void
+    public function labels(Request $request)
     {
-        $user = User::find($order->user_id);
+        $ids = array_slice(array_filter(array_map('intval', explode(',', (string) $request->query('ids')))), 0, OrderWorkflow::BULK_LIMIT);
 
-        if (! $user) {
-            return;
+        $orders = Order::with(['user', 'items.product'])
+            ->whereIn('id', $ids)
+            ->whereNotNull('ghn_order_code')
+            ->orderBy('id')
+            ->get();
+
+        if ($orders->isEmpty()) {
+            return redirect()->route('admin.orders.index')
+                ->with('error', 'Chưa có đơn nào có mã vận đơn để in. Hãy "Đóng gói & tạo vận đơn" trước.');
         }
 
-        $points = (int) floor($order->total_price / User::POINTS_PER_VND);
+        return view('admin.order.labels', [
+            'orders' => $orders,
+            'skipped' => count($ids) - $orders->count(),
+            'carrierName' => app(\App\Services\Shipping\ShippingCarrier::class)->name(),
+        ]);
+    }
 
-        $order->points_earned = $points;
+    /** Gom kết quả xử lý hàng loạt thành thông báo flash */
+    public static function bulkFlash(array $result, string $label): array
+    {
+        $okCount = count($result['ok']);
+        $failCount = count($result['failed']);
+        $flash = [];
 
-        $user->lifetime_spent = (int) $user->lifetime_spent + (int) $order->total_price;
-        $user->points = (int) $user->points + $points;
-        $user->save();
-
-        if ($points > 0) {
-            PointTransaction::create([
-                'user_id' => $user->id,
-                'order_id' => $order->id,
-                'points' => $points,
-                'reason' => 'Tích điểm từ đơn hàng #' . $order->id,
-            ]);
+        if ($okCount) {
+            $flash['success'] = sprintf('%s: thành công %d đơn (%s).', $label, $okCount,
+                implode(', ', array_map(fn ($id) => '#' . $id, $result['ok'])));
         }
+
+        if ($failCount) {
+            $lines = collect($result['failed'])->take(10)->map(fn ($msg, $id) => $msg)->implode(' • ');
+            $flash['error'] = sprintf('Bỏ qua %d đơn: %s%s', $failCount, $lines, $failCount > 10 ? ' …' : '');
+        }
+
+        return $flash ?: ['error' => 'Không có đơn nào được xử lý.'];
     }
 }

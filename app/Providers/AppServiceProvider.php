@@ -23,7 +23,12 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register()
     {
-        //
+        // Đơn vị vận chuyển dùng chung toàn hệ thống - đổi bằng SHIPPING_CARRIER trong .env
+        $this->app->bind(\App\Services\Shipping\ShippingCarrier::class, function ($app) {
+            return config('toyland.shipping_carrier') === 'ghn'
+                ? $app->make(\App\Services\Shipping\GhnCarrier::class)
+                : $app->make(\App\Services\Shipping\SimulatedCarrier::class);
+        });
     }
 
     /**

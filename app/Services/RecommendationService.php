@@ -81,7 +81,7 @@ class RecommendationService
             })
             ->join('orders as o', 'o.id', '=', 'a.order_id')
             ->where('a.product_id', $productId)
-            ->where('o.status', '!=', 'cancelled')
+            ->whereNotIn('o.status', \App\Models\Order::EXCLUDED_FROM_SALES)
             ->groupBy('b.product_id')
             ->select('b.product_id')
             ->selectRaw('COUNT(DISTINCT a.order_id) as co_count')
@@ -121,7 +121,7 @@ class RecommendationService
         return DB::table('order_items as oi')
             ->join('orders as o', 'o.id', '=', 'oi.order_id')
             ->whereIn('oi.product_id', $productIds)
-            ->where('o.status', '!=', 'cancelled')
+            ->whereNotIn('o.status', \App\Models\Order::EXCLUDED_FROM_SALES)
             ->groupBy('oi.product_id')
             ->select('oi.product_id')
             ->selectRaw('COUNT(DISTINCT oi.order_id) as order_count')
@@ -249,7 +249,7 @@ class RecommendationService
         $purchasedIds = DB::table('order_items as oi')
             ->join('orders as o', 'o.id', '=', 'oi.order_id')
             ->where('o.user_id', $userId)
-            ->where('o.status', '!=', 'cancelled')
+            ->whereNotIn('o.status', \App\Models\Order::EXCLUDED_FROM_SALES)
             ->distinct()
             ->pluck('oi.product_id')
             ->map(fn ($v) => (int) $v)
@@ -362,7 +362,7 @@ class RecommendationService
                 ->get()
                 ->count();
 
-            $totalOrders = DB::table('orders')->where('status', '!=', 'cancelled')->count();
+            $totalOrders = DB::table('orders')->whereNotIn('status', \App\Models\Order::EXCLUDED_FROM_SALES)->count();
 
             return [
                 'total_orders' => $totalOrders,

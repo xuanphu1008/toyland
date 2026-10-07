@@ -31,6 +31,9 @@ class Kernel extends ConsoleKernel
         //   cron gọi `schedule:run` mỗi phút  (dùng khi lên máy chủ thật)
         // Không bật cũng không sao, vẫn gửi tay được:
         //   php artisan toyland:birthday-reminder
+        // Trả kho cho đơn MoMo quá 30 phút chưa thanh toán
+        $schedule->command('orders:release-expired')->everyMinute()->withoutOverlapping();
+
         foreach (self::DAILY_COMMANDS as $command) {
             $schedule->command($command)
                 ->dailyAt('08:00')

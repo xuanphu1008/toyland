@@ -56,7 +56,14 @@ class MomoController extends Controller
                 ->with('error', 'Không tìm thấy giao dịch tương ứng. Vui lòng liên hệ bộ phận hỗ trợ.');
         }
 
-        if ($transaction->isPaid()) {
+        if ($transaction->isPaid() || $transaction->status === 'refund_pending') {
+            $order = $transaction->order;
+
+            if ($order && $order->status === 'cancelled') {
+                return redirect()->route('orders.index')
+                    ->with('error', 'Đã nhận thanh toán nhưng đơn #' . $order->id . ' đã hết thời gian giữ hàng nên bị hủy. Shop sẽ hoàn lại tiền cho bạn.');
+            }
+
             return redirect()->route('orders.index')
                 ->with('success', '🎉 Thanh toán MoMo thành công cho đơn hàng #' . $transaction->order_id . '. Cảm ơn bạn đã mua sắm tại ToyLand!');
         }
@@ -114,7 +121,17 @@ class MomoController extends Controller
                 ->with('success', 'Đơn hàng #' . $order->id . ' đã được thanh toán trước đó.');
         }
 
-        if (in_array($order->status, ['cancelled', 'completed'], true)) {
+        // Đơn quá thời gian giữ hàng thì hủy luôn trước khi xét
+        app(\App\Services\Orders\OrderWorkflow::class)->releaseExpired(true);
+        $order->refresh();
+
+        if ($order->status === 'cancelled') {
+            return redirect()->route('orders.index')
+                ->with('error', 'Đơn hàng #' . $order->id . ' đã hết thời gian giữ hàng hoặc đã bị hủy. Bạn vui lòng đặt lại đơn mới nhé.');
+        }
+
+        // Chỉ đơn đang chờ thanh toán (hoặc đơn cũ tạo trước khi có bước giữ hàng) mới trả tiền được
+        if (! in_array($order->status, ['awaiting_payment', 'pending'], true)) {
             return redirect()->route('orders.index')
                 ->with('error', 'Đơn hàng #' . $order->id . ' không còn ở trạng thái có thể thanh toán.');
         }
@@ -175,7 +192,8 @@ class MomoController extends Controller
         }
 
         // Đã chốt thành công rồi (callback và IPN cùng bắn về) -> bỏ qua, không xử lý lại
-        if ($transaction->isPaid()) {
+        // (kể cả khi tiền đã về muộn và đang chờ hoàn - MoMo có thể gửi IPN nhiều lần)
+        if ($transaction->isPaid() || in_array($transaction->status, ['refund_pending', 'refunded'], true)) {
             return $transaction;
         }
 

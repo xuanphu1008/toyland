@@ -4,19 +4,8 @@
 
 @section('content')
 @php
-$paymentLabels = [
-    'pending' => 'Chờ thanh toán', 'initiated' => 'Đang chờ MoMo', 'paid' => 'Đã thanh toán',
-    'failed' => 'Thanh toán thất bại', 'cancelled' => 'Đã hủy',
-    'refund_pending' => 'Chờ hoàn tiền', 'refunded' => 'Đã hoàn tiền',
-];
-$shippingLabels = [
-    'pending' => 'Chờ tạo vận đơn', 'not_shipped' => 'Chưa giao hàng', 'processing' => 'Đang tạo vận đơn',
-    'ready_to_pick' => 'Chờ lấy hàng', 'picking' => 'Đang lấy hàng', 'picked' => 'Đã lấy hàng',
-    'storing' => 'Đang lưu kho', 'transporting' => 'Đang trung chuyển', 'sorting' => 'Đang phân loại',
-    'delivering' => 'Đang giao hàng', 'delivered' => 'Giao hàng thành công',
-    'return' => 'Chờ hoàn hàng', 'returning' => 'Đang hoàn hàng', 'returned' => 'Đã hoàn hàng',
-    'return_transporting' => 'Đang chuyển hoàn', 'return_sorting' => 'Đang phân loại hoàn', 'cancelled' => 'Đã hủy',
-];
+$paymentLabels = \App\Models\Order::PAYMENT_LABELS;
+$shippingLabels = \App\Models\Order::SHIPPING_LABELS;
 $txStatusColor = [
     'pending' => 'bg-warning text-dark', 'paid' => 'bg-success', 'failed' => 'bg-danger',
     'cancelled' => 'bg-secondary', 'refund_pending' => 'bg-warning text-dark', 'refunded' => 'bg-secondary',
@@ -40,10 +29,34 @@ $txStatusColor = [
     </div>
 </div>
 
-{{-- ============ KHU VỰC XỬ LÝ ĐƠN HÀNG CỦA ADMIN ============ --}}
+{{-- ============ KHU VỰC XỬ LÝ ĐƠN HÀNG CỦA SHOP ============ --}}
+@php
+    $nextStepHint = [
+        'awaiting_payment' => 'Đang giữ hàng chờ khách thanh toán MoMo' . ($order->payment_expires_at ? ' tới ' . $order->payment_expires_at->format('H:i d/m') : '') . '. Quá hạn hệ thống tự hủy và trả kho.',
+        'pending' => 'Kiểm tra đơn rồi bấm "Xác nhận đơn".',
+        'confirmed' => 'Chuẩn bị hàng, đóng gói xong bấm "Đóng gói & tạo vận đơn" để lấy mã vận đơn và gọi bên vận chuyển tới lấy.',
+        'packed' => 'Đã có mã vận đơn, chờ bên vận chuyển tới lấy hàng (cập nhật ở màn hình Đơn vị vận chuyển).',
+        'shipping' => 'Bên vận chuyển đang giao. Shop không cần thao tác, trạng thái do bên vận chuyển báo về.',
+        'returning' => 'Hàng đang được hoàn về. Khi nhận lại đủ hàng, bấm "Đã nhận lại hàng hoàn" để cộng lại kho.',
+        'completed' => 'Đơn đã hoàn tất.',
+        'returned' => 'Hàng đã về kho.' . ($order->payment_status === 'refund_pending' ? ' Còn việc: hoàn tiền cho khách (trang Tài chính).' : ''),
+        'cancelled' => 'Đơn đã hủy.',
+    ][$order->status] ?? '';
+    $btnClass = ['confirm' => 'btn-primary', 'pack' => 'btn-success', 'confirm_returned' => 'btn-dark'];
+@endphp
 <div class="card border-0 shadow-sm rounded-4 mb-4 border-start border-4 border-primary">
     <div class="card-body">
-        <h6 class="fw-bold text-secondary mb-3">Xử lý đơn hàng</h6>
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+            <div>
+                <h6 class="fw-bold text-secondary mb-1">Xử lý đơn hàng</h6>
+                <div class="small text-muted">{{ $nextStepHint }}</div>
+            </div>
+            @if ($carrierActions)
+            <a href="{{ route('admin.carrier.index', ['q' => $order->ghn_order_code ?: $order->id]) }}" class="btn btn-sm btn-outline-warning">
+                <i class="bi bi-truck me-1"></i> Mở ở màn hình Đơn vị vận chuyển
+            </a>
+            @endif
+        </div>
 
         @if ($order->isCancelled())
         <div class="alert alert-danger border-0 rounded-3 mb-0">
@@ -53,37 +66,28 @@ $txStatusColor = [
         </div>
         @else
         <div class="row g-3">
-            {{-- Cập nhật trạng thái --}}
             <div class="col-lg-7">
+                @php $shopActions = collect($adminActions)->except('cancel'); @endphp
+                @if ($shopActions->isNotEmpty())
                 <form action="{{ route('admin.orders.status', $order->id) }}" method="POST">
                     @csrf @method('PATCH')
-                    <div class="row g-2 align-items-end">
-                        <div class="col-md-5">
-                            <label class="form-label small fw-semibold">Chuyển trạng thái sang</label>
-                            <select name="status" class="form-select" required>
-                                @foreach (\App\Models\Order::STATUSES as $value => $label)
-                                @continue($value === 'cancelled')
-                                <option value="{{ $value }}" {{ $order->status === $value ? 'selected' : '' }}>{{ $label }}</option>
-                                @endforeach
-                            </select>
-                        </div>
-                        <div class="col-md-5">
-                            <label class="form-label small fw-semibold">Ghi chú nội bộ (tùy chọn)</label>
-                            <input type="text" name="admin_note" maxlength="500" class="form-control" value="{{ $order->admin_note }}" placeholder="VD: Đã gọi xác nhận với khách">
-                        </div>
-                        <div class="col-md-2">
-                            <button type="submit" class="btn btn-primary w-100 rounded-pill">Cập nhật</button>
-                        </div>
-                    </div>
-                    <div class="form-text">
-                        Đơn COD khi chuyển sang <strong>Đã giao thành công</strong> sẽ tự động được đánh dấu là đã thu tiền.
+                    <label class="form-label small fw-semibold">Ghi chú nội bộ (tùy chọn)</label>
+                    <input type="text" name="admin_note" maxlength="500" class="form-control mb-2" value="{{ $order->admin_note }}" placeholder="VD: Đã gọi xác nhận với khách">
+                    <div class="d-flex flex-wrap gap-2">
+                        @foreach ($shopActions as $action => $label)
+                        <button type="submit" name="action" value="{{ $action }}" class="btn {{ $btnClass[$action] ?? 'btn-primary' }} rounded-pill px-4">
+                            {{ $label }}
+                        </button>
+                        @endforeach
                     </div>
                 </form>
+                @else
+                <div class="small text-muted">Không có thao tác nào của shop ở bước này.</div>
+                @endif
             </div>
 
-            {{-- Hủy đơn --}}
             <div class="col-lg-5 border-start-lg">
-                @if ($order->canBeCancelledByAdmin())
+                @if (isset($adminActions['cancel']))
                 <form action="{{ route('admin.orders.cancel', $order->id) }}" method="POST"
                       onsubmit="return confirm('Hủy đơn #{{ $order->id }} và hoàn lại toàn bộ tồn kho?')">
                     @csrf @method('PATCH')
@@ -93,10 +97,14 @@ $txStatusColor = [
                                placeholder="Lý do hủy (bắt buộc)">
                         <button type="submit" class="btn btn-danger">Hủy đơn</button>
                     </div>
-                    <div class="form-text">Hủy đơn sẽ tự động cộng trả số lượng sản phẩm về kho.</div>
+                    <div class="form-text">
+                        Trả hàng về kho{{ $order->ghn_order_code ? ', hủy vận đơn ' . $order->ghn_order_code : '' }}{{ $order->isPaid() ? ', chuyển tiền sang "Chờ hoàn tiền"' : '' }}.
+                    </div>
                 </form>
                 @else
-                <div class="alert alert-success border-0 rounded-3 mb-0 small">Đơn đã giao thành công, không thể hủy.</div>
+                <div class="alert alert-light border rounded-3 mb-0 small">
+                    Bên vận chuyển đã nhận hàng nên không hủy được nữa. Nếu khách không nhận, bên vận chuyển sẽ chuyển hoàn về shop.
+                </div>
                 @endif
             </div>
         </div>
@@ -129,7 +137,23 @@ $txStatusColor = [
                     <span class="text-muted small">Trạng thái:</span><br>
                     <span class="badge bg-info text-dark">{{ $shippingLabels[$order->shipping_status] ?? $order->shipping_status }}</span>
                 </div>
-                <div class="mb-2"><span class="text-muted small">Mã vận đơn GHN:</span><br>{{ $order->ghn_order_code ?? 'Chưa tạo' }}</div>
+                <div class="mb-2"><span class="text-muted small">Mã vận đơn:</span><br>
+                    @if ($order->ghn_order_code)
+                    <span class="fw-bold font-monospace">{{ $order->ghn_order_code }}</span>
+                    <span class="small text-muted">· {{ $order->carrier === 'ghn' ? 'Giao Hàng Nhanh' : 'ToyLand Express (mô phỏng)' }}</span>
+                    <a href="{{ route('admin.orders.labels', ['ids' => $order->id]) }}" target="_blank" class="small ms-1">In phiếu</a>
+                    @else
+                    Chưa tạo <span class="small text-muted">(tạo khi đóng gói)</span>
+                    @endif
+                </div>
+                @if ($order->delivery_attempts > 0)
+                <div class="mb-2"><span class="text-muted small">Số lần đi giao:</span> {{ $order->delivery_attempts }}
+                    @if ($order->last_delivery_note)<div class="small text-muted">Ghi chú: {{ $order->last_delivery_note }}</div>@endif
+                </div>
+                @endif
+                @if ($order->cod_amount > 0 && in_array($order->status, ['packed', 'shipping'], true))
+                <div class="mb-2"><span class="text-muted small">Tiền thu hộ (COD):</span> <span class="fw-bold text-danger">{{ number_format($order->cod_amount, 0, ',', '.') }} đ</span></div>
+                @endif
                 <div class="mb-2"><span class="text-muted small">Phí vận chuyển:</span><br>{{ number_format($order->ghn_total_fee, 0, ',', '.') }} đ</div>
                 <div class="mb-0 small text-muted">
                     Mã quận/huyện: {{ $order->to_district_id ?? '--' }} · Mã phường/xã: {{ $order->to_ward_code ?? '--' }}

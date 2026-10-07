@@ -18,7 +18,8 @@ $lastOption = $isMomo ? ($lastTransaction->payment_option ?? null) : null;
 $lastOptionLabel = $isMomo ? ($lastTransaction->payment_option_label ?? null) : null;
 
 // Chỉ cho thanh toán lại với đơn MoMo chưa thu được tiền và đơn vẫn còn hiệu lực
-$canRetryMomo = $isMomo && !$isPaid && !in_array($order->status, ['cancelled', 'completed'], true);
+// (đơn đang được giữ hàng, hoặc đơn cũ tạo trước khi có bước giữ hàng)
+$canRetryMomo = $isMomo && !$isPaid && ($order->isAwaitingPayment() || $order->status === 'pending');
 
 // Badge trạng thái thanh toán: ưu tiên báo "đã thanh toán", sau đó mới tới thất bại/chờ
 if ($isPaid) {
@@ -76,7 +77,12 @@ $paymentInfo = ['COD - Thanh toán khi nhận hàng', 'bg-secondary'];
                     @if ($lastTransaction && $lastTransaction->status === 'failed' && $lastTransaction->message)
                     Lý do lần trước: {{ $lastTransaction->message }}
                     @else
-                    Giao dịch MoMo chưa hoàn tất. Bạn có thể thanh toán lại bất cứ lúc nào.
+                    Giao dịch MoMo chưa hoàn tất.
+                    @endif
+                    @if ($order->payment_expires_at)
+                    <span class="d-block text-danger fw-semibold">
+                        Shop giữ hàng cho bạn tới {{ $order->payment_expires_at->format('H:i d/m') }} — quá hạn đơn tự hủy.
+                    </span>
                     @endif
                     @if ($lastOptionLabel)
                     <span class="d-block">Hình thức lần trước: {{ $lastOptionLabel }}</span>

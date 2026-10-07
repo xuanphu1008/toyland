@@ -18,17 +18,17 @@ class AdminController extends Controller
 
         // Số liệu vận hành để admin nắm nhanh tình hình trong ngày
         $pendingOrders = Order::where('status', 'pending')->count();
-        $shippingOrders = Order::whereIn('status', ['confirmed', 'packed', 'shipping'])->count();
+        $shippingOrders = Order::whereIn('status', ['confirmed', 'packed', 'shipping', 'returning'])->count();
         $totalOrders = Order::count();
         $totalCustomers = User::where('role', 'user')->count();
 
         $revenueToday = (int) Order::whereDate('created_at', today())
-            ->where('status', '!=', 'cancelled')
+            ->whereNotIn('status', Order::EXCLUDED_FROM_SALES)
             ->sum('total_price');
 
         $revenueMonth = (int) Order::whereYear('created_at', now()->year)
             ->whereMonth('created_at', now()->month)
-            ->where('status', '!=', 'cancelled')
+            ->whereNotIn('status', Order::EXCLUDED_FROM_SALES)
             ->sum('total_price');
 
         $newReviews = Review::whereDate('created_at', '>=', now()->subDays(7))->count();

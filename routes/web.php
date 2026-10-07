@@ -233,12 +233,21 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'admin'])->group(fun
         ->name('products.images.destroy');
     Route::resource('categories', CategoryController::class);
 
-    // Đơn hàng: chỉ xem danh sách/chi tiết, thao tác đi qua 2 route riêng bên dưới
+    // Đơn hàng: chỉ xem danh sách/chi tiết, thao tác đi qua các route riêng bên dưới.
+    // Mọi thay đổi trạng thái đều qua App\Services\Orders\OrderWorkflow.
+    // (khai TRƯỚC resource để "orders/phieu-giao-hang" không bị hiểu là orders/{order})
+    Route::post('/orders/xu-ly-hang-loat', [AdminOrderController::class, 'bulk'])->name('orders.bulk');
+    Route::get('/orders/phieu-giao-hang', [AdminOrderController::class, 'labels'])->name('orders.labels');
     Route::resource('orders', AdminOrderController::class)->only(['index', 'show']);
     Route::patch('/orders/{order}/status', [AdminOrderController::class, 'updateStatus'])->name('orders.status');
     Route::patch('/orders/{order}/cancel', [AdminOrderController::class, 'cancel'])->name('orders.cancel');
     // Hóa đơn phía quản trị - dùng chung bản hóa đơn với phía khách
     Route::get('/orders/{order}/hoa-don', [AdminOrderController::class, 'invoice'])->name('orders.invoice');
+
+    // Màn hình ĐƠN VỊ VẬN CHUYỂN: quản trị viên đóng vai bên giao hàng
+    Route::get('/van-chuyen', [\App\Http\Controllers\Admin\CarrierController::class, 'index'])->name('carrier.index');
+    Route::post('/van-chuyen/hang-loat', [\App\Http\Controllers\Admin\CarrierController::class, 'bulk'])->name('carrier.bulk');
+    Route::post('/van-chuyen/{order}', [\App\Http\Controllers\Admin\CarrierController::class, 'act'])->name('carrier.act');
 
     Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');
     Route::get('/reports/charts', [ReportController::class, 'charts'])->name('reports.charts');

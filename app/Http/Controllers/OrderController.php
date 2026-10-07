@@ -9,6 +9,8 @@ use App\Models\Product;
 use App\Services\GHNOrderService;
 use App\Services\GHNService;
 use App\Services\MomoService;
+use App\Services\Orders\OrderWorkflow;
+use App\Services\Orders\WorkflowException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -27,6 +29,9 @@ class OrderController extends Controller
 
     public function index()
     {
+        // Đơn MoMo quá hạn giữ hàng -> hủy để khách thấy đúng trạng thái
+        app(OrderWorkflow::class)->releaseExpired();
+
         $orders = Auth::user()->orders()
             // Nạp sẵn giao dịch thanh toán gần nhất để trang lịch sử đơn hiển thị
             // trạng thái/nút "Thanh toán lại" mà không bị truy vấn N+1
@@ -46,6 +51,11 @@ class OrderController extends Controller
     public function show(Order $order)
     {
         abort_if((int) $order->user_id !== (int) Auth::id(), 403);
+
+        if ($order->status === 'awaiting_payment') {
+            app(OrderWorkflow::class)->releaseExpired(true);
+            $order->refresh();
+        }
 
         $order->load(['items.product', 'paymentTransactions' => fn ($q) => $q->latest()]);
 
@@ -103,39 +113,16 @@ class OrderController extends Controller
             'cancel_reason' => ['required', 'string', 'max:255'],
         ], [], ['cancel_reason' => 'Lý do hủy']);
 
-        if (! $order->canBeCancelledByCustomer()) {
-            return back()->with('error', 'Đơn hàng này không còn ở trạng thái có thể tự hủy. Vui lòng liên hệ shop qua khung chat để được hỗ trợ.');
-        }
-
-        DB::transaction(function () use ($order, $data) {
-            $from = $order->status;
-
-            if (is_null($order->restocked_at)) {
-                foreach ($order->items as $item) {
-                    Product::where('id', $item->product_id)->increment('quantity', $item->quantity);
-                }
-                $order->restocked_at = now();
-            }
-
-            $order->status = 'cancelled';
-            $order->shipping_status = 'cancelled';
-            $order->payment_status = 'cancelled';
-            $order->cancel_reason = $data['cancel_reason'];
-            $order->cancelled_at = now();
-            $order->save();
-
-            PaymentTransaction::where('order_id', $order->id)
-                ->whereIn('status', ['pending', 'initiated'])
-                ->update(['status' => 'cancelled', 'message' => 'Khách hàng tự hủy đơn']);
-
-            OrderStatusLog::create([
-                'order_id' => $order->id,
-                'changed_by' => Auth::id(),
-                'from_status' => $from,
-                'to_status' => 'cancelled',
-                'note' => 'Khách tự hủy. Lý do: ' . $data['cancel_reason'],
+        try {
+            // Mọi kiểm tra (đúng chủ đơn, chưa thanh toán, chưa bàn giao vận chuyển)
+            // và việc đi kèm (trả kho, đóng giao dịch) nằm trong OrderWorkflow
+            app(OrderWorkflow::class)->apply($order, 'cancel', 'customer', [
+                'note' => $data['cancel_reason'],
+                'user_id' => Auth::id(),
             ]);
-        });
+        } catch (WorkflowException $e) {
+            return back()->with('error', $e->getMessage());
+        }
 
         return redirect()->route('orders.index')->with('success', 'Đã hủy đơn hàng #' . $order->id . '. Sản phẩm đã được trả lại kho.');
     }

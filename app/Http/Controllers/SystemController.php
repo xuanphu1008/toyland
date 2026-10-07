@@ -86,6 +86,9 @@ class SystemController extends Controller
             }
         }
 
+        // Tiện thể dọn đơn MoMo quá hạn giữ hàng (việc này an toàn khi chạy lặp lại)
+        $result['orders:release-expired'] = app(\App\Services\Orders\OrderWorkflow::class)->releaseExpired(true) . ' đơn';
+
         return response()->json(['date' => $today, 'tasks' => $result]);
     }
 }
