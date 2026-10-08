@@ -197,6 +197,7 @@
                     <div class="d-flex justify-content-between align-items-center mb-2">
                         <div class="small">
                             <span class="fw-semibold">{{ $item['name'] }}</span>
+                            @if (!empty($item['variant_name']))<span class="text-muted">({{ $item['variant_name'] }})</span>@endif
                             <span class="text-muted"> x{{ $item['quantity'] }}</span>
                         </div>
                         <span class="text-danger small fw-semibold">{{ number_format($item['price'] * $item['quantity'], 0, ',', '.') }} đ</span>

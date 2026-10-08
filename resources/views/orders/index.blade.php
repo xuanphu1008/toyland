@@ -58,7 +58,7 @@ $paymentInfo = ['COD - Thanh toán khi nhận hàng', 'bg-secondary'];
                 <tbody>
                     @foreach ($order->items as $item)
                     <tr>
-                        <td>{{ $item->product->name ?? 'Sản phẩm đã bị xóa' }}</td>
+                        <td>{{ $item->display_name ?? 'Sản phẩm đã bị xóa' }}</td>
                         <td>{{ number_format($item->price, 0, ',', '.') }} đ</td>
                         <td>{{ $item->quantity }}</td>
                         <td>{{ number_format($item->price * $item->quantity, 0, ',', '.') }} đ</td>

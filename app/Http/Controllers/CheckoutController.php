@@ -6,6 +6,7 @@ use App\Models\Coupon;
 use App\Models\CouponUsage;
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\ProductVariant;
 use App\Models\PaymentTransaction;
 use App\Models\Product;
 use App\Models\UserAddress;
@@ -208,9 +209,19 @@ class CheckoutController extends Controller
 
                 foreach ($cart as $item) {
                     $product = Product::lockForUpdate()->findOrFail($item['product_id']);
+                    $variant = ! empty($item['variant_id'])
+                        ? ProductVariant::where('product_id', $product->id)->lockForUpdate()->find($item['variant_id'])
+                        : null;
 
-                    if ($product->quantity < $item['quantity']) {
-                        throw new \RuntimeException("Sản phẩm \"{$product->name}\" không đủ số lượng trong kho, vui lòng cập nhật lại giỏ hàng.");
+                    if (! empty($item['variant_id']) && ! $variant) {
+                        throw new \RuntimeException("Phân loại của \"{$product->name}\" không còn bán, vui lòng cập nhật lại giỏ hàng.");
+                    }
+
+                    $label = $product->name . ($variant ? " ({$variant->name})" : '');
+                    $stock = $variant ? $variant->quantity : $product->quantity;
+
+                    if ($stock < $item['quantity']) {
+                        throw new \RuntimeException("Sản phẩm \"{$label}\" không đủ số lượng trong kho, vui lòng cập nhật lại giỏ hàng.");
                     }
 
                     // CHỐT GIÁ LẦN CUỐI, trên bản ghi đã khóa trong giao dịch.
@@ -222,9 +233,10 @@ class CheckoutController extends Controller
                     //
                     // Nguyên tắc: không bao giờ thu của khách một mức giá mà họ
                     // chưa từng được xem.
-                    if ((int) $product->effective_price !== (int) $item['price']) {
+                    $currentPrice = $variant ? $variant->effective_price : $product->effective_price;
+                    if ((int) $currentPrice !== (int) $item['price']) {
                         throw new \RuntimeException(
-                            "Giá của \"{$product->name}\" vừa thay đổi (chương trình khuyến mãi bắt đầu hoặc kết thúc). "
+                            "Giá của \"{$label}\" vừa thay đổi (chương trình khuyến mãi bắt đầu hoặc kết thúc). "
                             . 'Mời bạn xem lại giỏ hàng với giá mới rồi đặt lại giúp shop nhé.'
                         );
                     }
@@ -232,10 +244,16 @@ class CheckoutController extends Controller
                     OrderItem::create([
                         'order_id' => $order->id,
                         'product_id' => $product->id,
+                        'variant_id' => $variant?->id,
+                        'variant_name' => $variant?->name,
                         'quantity' => $item['quantity'],
                         'price' => $item['price'],
                     ]);
 
+                    // Tổng tồn kho của sản phẩm luôn bằng tổng các biến thể -> trừ cả hai
+                    if ($variant) {
+                        $variant->decrement('quantity', $item['quantity']);
+                    }
                     $product->decrement('quantity', $item['quantity']);
                 }
 
@@ -350,22 +368,28 @@ class CheckoutController extends Controller
             return $cart;
         }
 
-        $products = Product::whereIn('id', array_keys($cart))->get()->keyBy('id');
+        $products = Product::with('variants')
+            ->whereIn('id', collect($cart)->pluck('product_id')->unique())
+            ->get()->keyBy('id');
 
-        foreach ($cart as $productId => $item) {
-            $product = $products[$productId] ?? null;
+        foreach ($cart as $key => $item) {
+            $product = $products[$item['product_id']] ?? null;
+            $variant = ! empty($item['variant_id']) && $product
+                ? $product->variants->firstWhere('id', $item['variant_id']) : null;
 
-            if (! $product) {
-                unset($cart[$productId]);
+            // Sản phẩm/biến thể đã bị gỡ khỏi hệ thống -> loại khỏi giỏ
+            if (! $product || (! empty($item['variant_id']) && ! $variant)) {
+                unset($cart[$key]);
 
                 continue;
             }
 
-            $cart[$productId]['price'] = $product->effective_price;
-            $cart[$productId]['base_price'] = (int) $product->price;
-            $cart[$productId]['on_sale'] = $product->is_on_sale;
-            $cart[$productId]['name'] = $product->name;
-            $cart[$productId]['image'] = $product->image;
+            $cart[$key]['price'] = $variant ? $variant->effective_price : $product->effective_price;
+            $cart[$key]['base_price'] = $variant ? $variant->base_price : (int) $product->price;
+            $cart[$key]['on_sale'] = $product->is_on_sale;
+            $cart[$key]['name'] = $product->name;
+            $cart[$key]['variant_name'] = $variant?->name;
+            $cart[$key]['image'] = $variant && $variant->image ? $variant->image : $product->image;
         }
 
         session(['cart' => $cart]);

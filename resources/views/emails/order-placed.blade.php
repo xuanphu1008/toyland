@@ -31,7 +31,7 @@
                 <tbody>
                     @foreach ($order->items as $item)
                     <tr>
-                        <td style="padding:10px;border-bottom:1px solid #FFF1EA;">{{ $item->product->name ?? 'Sản phẩm' }}</td>
+                        <td style="padding:10px;border-bottom:1px solid #FFF1EA;">{{ $item->display_name ?? 'Sản phẩm' }}</td>
                         <td style="padding:10px;border-bottom:1px solid #FFF1EA;text-align:center;">{{ $item->quantity }}</td>
                         <td style="padding:10px;border-bottom:1px solid #FFF1EA;text-align:right;">{{ number_format($item->price * $item->quantity, 0, ',', '.') }} đ</td>
                     </tr>

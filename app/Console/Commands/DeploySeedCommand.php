@@ -42,6 +42,10 @@ class DeploySeedCommand extends Command
 
         $this->info('Đã có dữ liệu, bỏ qua bước nạp mẫu.');
 
+        // Gộp sản phẩm mẫu trùng (chỉ làm gì đó ở lần deploy đầu tiên sau khi có tính năng
+        // biến thể; các lần sau không còn gì để gộp nên chạy không ảnh hưởng).
+        $this->call('products:merge-duplicates');
+
         return self::SUCCESS;
     }
 }

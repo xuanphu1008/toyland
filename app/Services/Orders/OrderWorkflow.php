@@ -460,6 +460,11 @@ class OrderWorkflow
 
         foreach ($o->items as $item) {
             Product::where('id', $item->product_id)->increment('quantity', $item->quantity);
+
+            // Đơn có biến thể: cộng trả đúng biến thể đã trừ (đơn cũ không có variant_id thì bỏ qua)
+            if ($item->variant_id) {
+                \App\Models\ProductVariant::where('id', $item->variant_id)->increment('quantity', $item->quantity);
+            }
         }
 
         $o->restocked_at = now();

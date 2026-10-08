@@ -182,7 +182,7 @@ $shippingColor = [
                         <td class="text-start">
                             @php $firstItem = $order->items->first(); @endphp
                             @if ($firstItem)
-                            <div>{{ $firstItem->product->name ?? 'Sản phẩm đã bị xóa' }}</div>
+                            <div>{{ $firstItem->display_name ?? 'Sản phẩm đã bị xóa' }}</div>
                             @if ($order->items->count() > 1)
                             <div class="small text-muted">và {{ $order->items->count() - 1 }} sản phẩm khác</div>
                             @endif

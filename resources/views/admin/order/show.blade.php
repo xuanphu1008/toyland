@@ -196,7 +196,7 @@ $txStatusColor = [
                                     @if ($item->product && $item->product->image)
                                     <img src="{{ $item->product->image_url }}" width="40" height="40" class="rounded border" style="object-fit: cover;">
                                     @endif
-                                    {{ $item->product->name ?? 'Sản phẩm đã bị xóa' }}
+                                    {{ $item->display_name ?? 'Sản phẩm đã bị xóa' }}
                                 </td>
                                 <td class="text-end">{{ number_format($item->price, 0, ',', '.') }} đ</td>
                                 <td class="text-center">{{ $item->quantity }}</td>

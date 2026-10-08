@@ -4,6 +4,8 @@ namespace Database\Seeders;
 
 use App\Models\Category;
 use App\Models\Product;
+use App\Models\ProductVariant;
+use App\Services\ProductMerger;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Str;
 
@@ -94,6 +96,9 @@ class ToyCatalogSeeder extends Seeder
         $categories = $this->seedCategories();
         $this->adoptLegacyCategories($categories);
         $this->seedProducts($categories);
+
+        // Gộp các cặp sản phẩm mẫu trùng nhau (xem App\Services\ProductMerger)
+        (new ProductMerger())->run();
     }
 
     /**
@@ -174,7 +179,22 @@ class ToyCatalogSeeder extends Seeder
     {
         $index = 0;
 
+        // Bản sao đã bị gộp thì không tạo lại. Với cặp "thành phân loại", bản cũ chỉ
+        // cần tạo khi sản phẩm chính CHƯA có phân loại (CSDL mới) để ProductMerger có
+        // dữ liệu giá/kho mà gộp; đã gộp rồi thì bỏ qua.
+        $skip = array_merge(...array_values(ProductMerger::DUPLICATES));
+        foreach (ProductMerger::VARIANTS as $main => $labels) {
+            if (ProductVariant::whereHas('product', fn ($q) => $q->where('name', $main))->exists()) {
+                $skip = array_merge($skip, array_filter($labels));
+            }
+        }
+        $skip = array_flip($skip);
+
         foreach ($this->products() as $row) {
+            if (isset($skip[$row['name']])) {
+                continue;
+            }
+
             $category = $categories[$row['category']] ?? null;
 
             if (! $category) {
@@ -183,11 +203,13 @@ class ToyCatalogSeeder extends Seeder
 
             $index++;
 
-            Product::updateOrCreate(
-                ['name' => $row['name']],
+            $product = Product::firstOrNew(['name' => $row['name']]);
+            $isNew = ! $product->exists;
+
+            $product->fill(
                 [
                     'category_id' => $category->id,
-                    'sku' => $row['sku'] ?? sprintf('TL-%04d', $index),
+                    'sku' => $product->sku ?: ($row['sku'] ?? sprintf('TL-%04d', $index)),
                     'brand' => $row['brand'],
                     'character_name' => $row['character'] ?? null,
                     'age_min_months' => $row['age_min'],
@@ -205,10 +227,17 @@ class ToyCatalogSeeder extends Seeder
                     'safety_note' => $row['safety'] ?? ($row['age_min'] >= 36 ? 'Có chi tiết nhỏ, không dành cho bé dưới 3 tuổi.' : null),
                     'is_featured' => $row['featured'] ?? false,
                     'description' => $row['desc'],
-                    'price' => $row['price'],
-                    'quantity' => $row['qty'],
                 ]
             );
+
+            // Giá và tồn kho CHỈ nạp khi tạo mới: chạy lại seeder không được ghi đè
+            // giá admin đã chỉnh hay số lượng đã trừ theo đơn hàng.
+            if ($isNew) {
+                $product->price = $row['price'];
+                $product->quantity = $row['qty'];
+            }
+
+            $product->save();
         }
     }
 

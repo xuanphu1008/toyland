@@ -57,7 +57,7 @@
         <div class="row"><b>Điện thoại:</b> {{ $order->customer_phone }}</div>
         <div class="row"><b>Địa chỉ:</b> {{ $address }}</div>
         <div class="items">
-            {{ $order->items->map(fn ($i) => ($i->product->name ?? 'Sản phẩm') . ' x' . $i->quantity)->implode('; ') }}
+            {{ $order->items->map(fn ($i) => ($i->display_name ?? 'Sản phẩm') . ' x' . $i->quantity)->implode('; ') }}
         </div>
         <div class="cod">
             @if ($cod > 0)

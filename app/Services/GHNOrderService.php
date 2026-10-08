@@ -68,7 +68,7 @@ class GHNOrderService
 
         $items = $order->items->map(function ($item) {
             return [
-                'name' => $item->product->name ?? 'Sản phẩm',
+                'name' => $item->display_name ?? 'Sản phẩm',
                 'quantity' => (int) $item->quantity,
                 'price' => (int) $item->price,
             ];

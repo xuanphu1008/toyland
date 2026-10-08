@@ -81,6 +81,7 @@ class ProductController extends Controller
 
         $product = Product::create($data);
 
+        $this->saveVariants($request, $product);
         $this->storeGallery($request, $product);
 
         return redirect()->route('admin.products.index')->with('success', 'Đã thêm sản phẩm mới!');
@@ -119,6 +120,7 @@ class ProductController extends Controller
 
         $product->update($data);
 
+        $this->saveVariants($request, $product);
         $this->storeGallery($request, $product);
 
         return redirect()->route('admin.products.index')->with('success', 'Cập nhật thành công!');
@@ -145,6 +147,47 @@ class ProductController extends Controller
         $product->delete();
 
         return redirect()->route('admin.products.index')->with('success', 'Đã xóa sản phẩm.');
+    }
+
+    /**
+     * Đồng bộ danh sách phân loại gửi từ form với CSDL:
+     *  - dòng có id  -> cập nhật; dòng không id -> tạo mới;
+     *  - phân loại không còn trong form -> xóa (đơn cũ vẫn giữ tên đã chụp ở order_items.variant_name);
+     *  - có phân loại thì products.quantity = tổng tồn các phân loại.
+     */
+    private function saveVariants(Request $request, Product $product): void
+    {
+        if (! $request->has('variants') && ! $request->isMethod('put')) {
+            return;
+        }
+
+        $rows = collect($request->input('variants', []))
+            ->filter(fn ($r) => filled($r['name'] ?? null))
+            ->values();
+
+        $keepIds = [];
+        foreach ($rows as $i => $r) {
+            $attrs = [
+                'name' => trim($r['name']),
+                'price_adjust' => (int) ($r['price_adjust'] ?? 0),
+                'quantity' => max(0, (int) ($r['quantity'] ?? 0)),
+                'sort_order' => $i,
+            ];
+            $variant = filled($r['id'] ?? null) ? $product->variants()->find($r['id']) : null;
+
+            if ($variant) {
+                $variant->update($attrs);
+            } else {
+                $variant = $product->variants()->create($attrs);
+            }
+            $keepIds[] = $variant->id;
+        }
+
+        $product->variants()->whereNotIn('id', $keepIds)->delete();
+
+        if ($rows->isNotEmpty()) {
+            $product->syncStockFromVariants();
+        }
     }
 
     /**
@@ -192,6 +235,9 @@ class ProductController extends Controller
     {
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
+            'variants.*.name' => ['nullable', 'string', 'max:120'],
+            'variants.*.price_adjust' => ['nullable', 'integer', 'min:-100000000', 'max:100000000'],
+            'variants.*.quantity' => ['nullable', 'integer', 'min:0', 'max:1000000'],
             'category_id' => ['required', 'exists:categories,id'],
             'sku' => ['nullable', 'string', 'max:40'],
             'brand' => ['nullable', 'string', 'max:255'],
@@ -256,7 +302,7 @@ class ProductController extends Controller
         ]);
 
         // 'gallery' là các file tải lên, không phải cột của bảng products
-        unset($data['gallery']);
+        unset($data['gallery'], $data['variants']);
 
         // Bỏ trống giá khuyến mãi = tắt chương trình, dọn luôn hai mốc thời gian
         // để không còn dữ liệu mồ côi gây khó hiểu khi xem lại.

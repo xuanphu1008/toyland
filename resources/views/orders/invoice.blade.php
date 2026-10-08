@@ -193,7 +193,7 @@
             <tr>
                 <td class="ctr">{{ $i + 1 }}</td>
                 <td>
-                    {{ $item->product->name ?? 'Sản phẩm đã bị gỡ' }}
+                    {{ $item->display_name ?? 'Sản phẩm đã bị gỡ' }}
                     @if ($item->product && $item->product->sku)
                     <div class="muted">Mã: {{ $item->product->sku }}</div>
                     @endif

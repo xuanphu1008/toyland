@@ -200,6 +200,36 @@
     </div>
 
     {{-- ============ CỘT PHẢI: GIÁ, KHO, ẢNH ============ --}}
+    @push('scripts')
+    <script>
+    (function () {
+        var wrap = document.getElementById('tl-variant-rows');
+        if (!wrap) return;
+        var idx = wrap.querySelectorAll('.tl-variant-row').length;
+        var qty = document.getElementById('tl-qty-field');
+        var note = document.getElementById('tl-qty-note');
+
+        function recalc() {
+            var rows = wrap.querySelectorAll('.tl-variant-row');
+            if (!rows.length) { qty.readOnly = false; note.style.display = 'none'; return; }
+            var sum = 0;
+            rows.forEach(function (r) { sum += parseInt(r.querySelector('.v-qty').value, 10) || 0; });
+            qty.value = sum; qty.readOnly = true; note.style.display = '';
+        }
+        document.getElementById('tl-add-variant').addEventListener('click', function () {
+            var html = document.getElementById('tl-variant-tpl').innerHTML.replace(/__I__/g, idx++);
+            wrap.insertAdjacentHTML('beforeend', html);
+            recalc();
+        });
+        wrap.addEventListener('click', function (e) {
+            var btn = e.target.closest('.tl-del-variant');
+            if (btn) { btn.closest('.tl-variant-row').remove(); recalc(); }
+        });
+        wrap.addEventListener('input', function (e) { if (e.target.classList.contains('v-qty')) recalc(); });
+    })();
+    </script>
+    @endpush
+
     <div class="col-lg-4">
         <div class="card border-0 shadow-sm rounded-4 mb-4">
             <div class="card-body">
@@ -213,12 +243,63 @@
                     @error('price')<div class="invalid-feedback">{{ $message }}</div>@enderror
                 </div>
 
+                @php
+                    $variantRows = old('variants', $product ? $product->variants->map(fn ($v) => [
+                        'id' => $v->id, 'name' => $v->name, 'sku' => $v->sku,
+                        'price_adjust' => $v->price_adjust, 'quantity' => $v->quantity,
+                    ])->all() : []);
+                    $hasVariants = count($variantRows) > 0;
+                @endphp
                 <div class="mb-3">
                     <label class="form-label">Số lượng kho <span class="text-danger">*</span></label>
-                    <input type="number" name="quantity" min="0" required
+                    <input type="number" name="quantity" min="0" required id="tl-qty-field"
                            value="{{ old('quantity', $product->quantity ?? 0) }}"
-                           class="form-control @error('quantity') is-invalid @enderror">
+                           class="form-control @error('quantity') is-invalid @enderror" {{ $hasVariants ? 'readonly' : '' }}>
+                    <div class="form-text" id="tl-qty-note" style="{{ $hasVariants ? '' : 'display:none' }}">
+                        Sản phẩm có phân loại: kho = tổng số lượng các phân loại bên dưới.
+                    </div>
                     @error('quantity')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                </div>
+
+ 
+                {{-- ===== Phân loại (biến thể) ===== --}}
+                <div class="border rounded-3 p-2 mb-3 bg-light">
+                    <div class="fw-semibold small mb-1"><i class="bi bi-palette me-1"></i> Phân loại (màu, cỡ, phiên bản)</div>
+                    <div class="form-text mb-2">
+                        Để trống nếu sản phẩm chỉ có một loại. "Chênh lệch giá" cộng/trừ vào giá bán
+                        (VD: +20000 hoặc -10000); khuyến mãi flash sale vẫn áp cho cả sản phẩm.
+                    </div>
+                    <div id="tl-variant-rows">
+                        @foreach ($variantRows as $i => $row)
+                        <div class="tl-variant-row border rounded-3 bg-white p-2 mb-2">
+                            <input type="hidden" name="variants[{{ $i }}][id]" value="{{ $row['id'] ?? '' }}">
+                            <input type="text" name="variants[{{ $i }}][name]" value="{{ $row['name'] ?? '' }}"
+                                   class="form-control form-control-sm mb-1" placeholder="Tên phân loại, VD: Màu đỏ / Size M" maxlength="120">
+                            <div class="d-flex gap-1">
+                                <input type="number" name="variants[{{ $i }}][price_adjust]" value="{{ $row['price_adjust'] ?? 0 }}"
+                                       class="form-control form-control-sm" placeholder="Chênh lệch giá" step="1000" title="Chênh lệch giá (đ)">
+                                <input type="number" name="variants[{{ $i }}][quantity]" value="{{ $row['quantity'] ?? 0 }}" min="0"
+                                       class="form-control form-control-sm v-qty" placeholder="Số lượng" title="Số lượng kho">
+                                <button type="button" class="btn btn-sm btn-outline-danger tl-del-variant" title="Xóa phân loại"><i class="bi bi-x-lg"></i></button>
+                            </div>
+                        </div>
+                        @endforeach
+                    </div>
+                    <button type="button" id="tl-add-variant" class="btn btn-sm btn-outline-primary rounded-pill">
+                        <i class="bi bi-plus-lg me-1"></i> Thêm phân loại
+                    </button>
+                    <template id="tl-variant-tpl">
+                        <div class="tl-variant-row border rounded-3 bg-white p-2 mb-2">
+                            <input type="hidden" name="variants[__I__][id]" value="">
+                            <input type="text" name="variants[__I__][name]" class="form-control form-control-sm mb-1"
+                                   placeholder="Tên phân loại, VD: Màu đỏ / Size M" maxlength="120">
+                            <div class="d-flex gap-1">
+                                <input type="number" name="variants[__I__][price_adjust]" value="0" class="form-control form-control-sm" step="1000" title="Chênh lệch giá (đ)">
+                                <input type="number" name="variants[__I__][quantity]" value="0" min="0" class="form-control form-control-sm v-qty" title="Số lượng kho">
+                                <button type="button" class="btn btn-sm btn-outline-danger tl-del-variant" title="Xóa phân loại"><i class="bi bi-x-lg"></i></button>
+                            </div>
+                        </div>
+                    </template>
                 </div>
 
                 <div class="form-check form-switch">

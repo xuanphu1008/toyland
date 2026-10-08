@@ -36,7 +36,7 @@ $tierDiscount = Auth::user()->tier_discount > 0 ? (int) floor($total * Auth::use
                         <tbody>
                             @foreach ($cart as $item)
                             @php $lineTotal = $item['price'] * $item['quantity']; @endphp
-                            <tr data-product-id="{{ $item['product_id'] }}">
+                            <tr data-product-id="{{ $item['product_id'] }}" data-variant-id="{{ $item['variant_id'] ?? '' }}">
                                 <td style="width: 84px;">
                                     <a href="{{ route('products.show', $item['product_id']) }}">
                                         @if (!empty($item['image']))
@@ -53,6 +53,9 @@ $tierDiscount = Auth::user()->tier_discount > 0 ? (int) floor($total * Auth::use
                                 <td>
                                     <a href="{{ route('products.show', $item['product_id']) }}"
                                        class="text-decoration-none text-dark fw-semibold">{{ $item['name'] }}</a>
+                                    @if (!empty($item['variant_name']))
+                                    <div class="small text-muted">Phân loại: <span class="fw-semibold">{{ $item['variant_name'] }}</span></div>
+                                    @endif
                                     <div class="small text-muted d-md-none">{{ number_format($item['price'], 0, ',', '.') }} đ</div>
                                 </td>
                                 <td class="text-end d-none d-md-table-cell">{{ number_format($item['price'], 0, ',', '.') }} đ</td>
@@ -73,6 +76,7 @@ $tierDiscount = Auth::user()->tier_discount > 0 ? (int) floor($total * Auth::use
                                     <form action="{{ route('cart.remove', $item['product_id']) }}" method="POST" class="m-0"
                                           onsubmit="return confirm('Bỏ sản phẩm này khỏi giỏ hàng?')">
                                         @csrf @method('DELETE')
+                                        <input type="hidden" name="variant_id" value="{{ $item['variant_id'] ?? '' }}">
                                         <button type="submit" class="btn btn-sm btn-outline-danger rounded-circle"
                                                 style="width:34px;height:34px;padding:0" title="Xóa khỏi giỏ">
                                             <i class="bi bi-trash"></i>
@@ -173,7 +177,7 @@ $tierDiscount = Auth::user()->tier_discount > 0 ? (int) floor($total * Auth::use
                 'X-Requested-With': 'XMLHttpRequest',
                 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
             },
-            body: new URLSearchParams({ quantity: newVal }),
+            body: new URLSearchParams({ quantity: newVal, variant_id: row.dataset.variantId || '' }),
         })
             .then(async (res) => {
                 const data = await res.json();

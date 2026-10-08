@@ -153,7 +153,7 @@
                             <td>
                                 @if ($item->product)
                                 <a href="{{ route('products.show', $item->product_id) }}" class="text-decoration-none text-dark fw-semibold">
-                                    {{ $item->product->name }}
+                                    {{ $item->display_name }}
                                 </a>
                                 @else
                                 <span class="text-muted">Sản phẩm đã bị xóa</span>

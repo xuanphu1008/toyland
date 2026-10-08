@@ -95,8 +95,8 @@
             </div>
 
             <div class="d-flex align-items-center flex-wrap gap-3 mb-3">
-                <span class="fs-3 fw-bold text-danger">
-                    {{ number_format($product->effective_price, 0, ',', '.') }} đ
+                <span class="fs-3 fw-bold text-danger" id="tl-price" data-from="{{ $product->has_variants ? 1 : 0 }}">
+                    @if ($product->has_variants && $product->variants->pluck('price_adjust')->unique()->count() > 1)<small class="fs-6 fw-normal">Từ </small>@endif{{ number_format($product->min_effective_price, 0, ',', '.') }} đ
                 </span>
 
                 @if ($product->is_on_sale)
@@ -153,6 +153,23 @@
             @if ($product->quantity > 0)
             <form action="{{ route('cart.add', $product->id) }}" method="POST" class="ajax-add-to-cart-form mt-4">
                 @csrf
+                @if ($product->has_variants)
+                <div class="fw-semibold mb-2">Phân loại <span class="text-danger">*</span></div>
+                <div class="d-flex flex-wrap gap-2 mb-3" id="tl-variants">
+                    @foreach ($product->variants as $v)
+                    <div>
+                        <input type="radio" class="btn-check" name="variant_id" id="variant-{{ $v->id }}" value="{{ $v->id }}"
+                               data-stock="{{ $v->quantity }}" data-price="{{ $v->effective_price }}" data-base="{{ $v->base_price }}"
+                               {{ $v->quantity <= 0 ? 'disabled' : '' }} required>
+                        <label class="btn btn-outline-primary rounded-pill" for="variant-{{ $v->id }}">
+                            {{ $v->name }}
+                            @if ($v->quantity <= 0)<small>(hết hàng)</small>@endif
+                        </label>
+                    </div>
+                    @endforeach
+                </div>
+                @endif
+
                 <label for="quantity" class="form-label fw-semibold">Số lượng</label>
                 <div class="tl-qty mb-3">
                     <button type="button" class="tl-qty-btn" data-tl-qty="-1" aria-label="Giảm số lượng">&minus;</button>
@@ -160,7 +177,9 @@
                            class="tl-qty-input" inputmode="numeric" aria-label="Số lượng">
                     <button type="button" class="tl-qty-btn" data-tl-qty="1" aria-label="Tăng số lượng">+</button>
                 </div>
-                <div class="form-text mb-3">Còn {{ $product->quantity }} sản phẩm trong kho.</div>
+                <div class="form-text mb-3" id="tl-stock-text">
+                    @if ($product->has_variants) Chọn phân loại để xem số lượng còn lại. @else Còn {{ $product->quantity }} sản phẩm trong kho. @endif
+                </div>
                 <div class="d-flex gap-2 flex-wrap">
                     <button type="submit" class="btn btn-primary rounded-pill px-4">Thêm vào giỏ hàng</button>
                     <button type="submit" formaction="{{ route('cart.buyNow', $product->id) }}" class="btn btn-danger rounded-pill px-4 buy-now-btn">Mua ngay</button>
@@ -316,4 +335,25 @@
 </div>
 @endif
 
+
+@push('scripts')
+<script>
+    // Chọn phân loại -> đổi giá, giới hạn số lượng theo tồn kho của phân loại đó
+    (function () {
+        var box = document.getElementById('tl-variants');
+        if (!box) return;
+        var fmt = function (n) { return Number(n).toLocaleString('vi-VN') + ' đ'; };
+        box.addEventListener('change', function (e) {
+            var r = e.target;
+            if (!r || r.name !== 'variant_id') return;
+            var stock = parseInt(r.dataset.stock, 10) || 0;
+            document.getElementById('tl-price').textContent = fmt(r.dataset.price);
+            document.getElementById('tl-stock-text').textContent = 'Còn ' + stock + ' sản phẩm trong kho.';
+            var q = document.getElementById('quantity');
+            q.max = stock;
+            if ((parseInt(q.value, 10) || 1) > stock) q.value = stock;
+        });
+    })();
+</script>
+@endpush
 @endsection

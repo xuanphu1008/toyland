@@ -551,7 +551,11 @@ $catIcon = function ($name, $index) {
                         </div>
 
                         @auth
-                        @if (!Auth::user()->isAdmin() && $product->quantity > 0)
+                        @if (!Auth::user()->isAdmin() && $product->quantity > 0 && $product->has_variants)
+                        <a href="{{ route('products.show', $product->id) }}" class="btn btn-primary w-100">
+                            <i class="bi bi-sliders me-1"></i> Chọn phân loại
+                        </a>
+                        @elseif (!Auth::user()->isAdmin() && $product->quantity > 0)
                         <form action="{{ route('cart.add', $product->id) }}" method="POST" class="ajax-add-to-cart-form">
                             @csrf
                             <button type="submit" class="btn btn-primary w-100">

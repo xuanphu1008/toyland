@@ -252,7 +252,7 @@ class ChatbotService
 
         $itemCount = $order->items->count();
         if ($itemCount > 0) {
-            $names = $order->items->take(3)->map(fn ($i) => $i->product->name ?? 'Sản phẩm')->implode(', ');
+            $names = $order->items->take(3)->map(fn ($i) => $i->display_name ?? 'Sản phẩm')->implode(', ');
             $lines[] = '• Gồm ' . $itemCount . ' món: ' . $names . ($itemCount > 3 ? '...' : '');
         }
 

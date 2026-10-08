@@ -79,6 +79,9 @@
                                     {{ \Illuminate\Support\Str::limit($product->name, 52) }}
                                 </a>
 
+                                @if ($product->has_variants && $product->quantity > 0)
+                                <a href="{{ route('products.show', $product->id) }}" class="btn btn-sm btn-primary rounded-pill px-3 w-100 mt-2">Chọn phân loại</a>
+                                @else
                                 <form action="{{ route('cart.add', $product->id) }}" method="POST" class="mt-2">
                                     @csrf
                                     <button class="btn btn-sm btn-primary rounded-pill px-3 w-100"
@@ -86,6 +89,7 @@
                                         {{ $product->quantity > 0 ? 'Thêm vào giỏ' : 'Hết hàng' }}
                                     </button>
                                 </form>
+                                @endif
                             </div>
                         </th>
                         @endforeach

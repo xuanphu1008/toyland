@@ -40,7 +40,9 @@
                 </div>
 
                 <div class="d-flex gap-2">
-                    @if ($product->quantity > 0)
+                    @if ($product->quantity > 0 && $product->has_variants)
+                    <a href="{{ route('products.show', $product->id) }}" class="btn btn-sm btn-primary w-100 rounded-pill flex-grow-1">Chọn phân loại</a>
+                    @elseif ($product->quantity > 0)
                     <form action="{{ route('cart.add', $product->id) }}" method="POST" class="flex-grow-1 ajax-add-to-cart-form">
                         @csrf
                         <button type="submit" class="btn btn-sm btn-primary w-100 rounded-pill">Thêm vào giỏ</button>

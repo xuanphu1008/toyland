@@ -92,6 +92,34 @@ class Product extends Model
         return $this->hasMany(ProductImage::class)->orderBy('sort_order')->orderBy('id');
     }
 
+    // Biến thể (màu, cỡ, phiên bản). Rỗng = sản phẩm bán một loại duy nhất.
+    public function variants()
+    {
+        return $this->hasMany(ProductVariant::class)->orderBy('sort_order')->orderBy('id');
+    }
+
+    public function getHasVariantsAttribute(): bool
+    {
+        return $this->variants->isNotEmpty();
+    }
+
+    /** Giá thấp nhất trong các biến thể (để hiện "giá từ"); không có biến thể thì là giá hiệu lực */
+    public function getMinEffectivePriceAttribute(): int
+    {
+        if (! $this->has_variants) {
+            return $this->effective_price;
+        }
+
+        return (int) $this->variants->map->effective_price->min();
+    }
+
+    /** Đồng bộ products.quantity = tổng tồn các biến thể (gọi sau mỗi lần sửa biến thể) */
+    public function syncStockFromVariants(): void
+    {
+        $total = (int) $this->variants()->sum('quantity');
+        $this->forceFill(['quantity' => $total])->save();
+    }
+
     // 1 Sản phẩm có thể xuất hiện trong nhiều dòng chi tiết đơn hàng (Quan hệ 1-N)
     public function orderItems()
     {
