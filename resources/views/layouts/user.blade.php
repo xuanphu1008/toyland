@@ -166,6 +166,12 @@
                             <li><a class="dropdown-item" href="{{ route('profile.edit') }}"><i class="bi bi-person-gear me-2"></i>Hồ sơ của tôi</a></li>
                             <li><a class="dropdown-item" href="{{ route('orders.index') }}"><i class="bi bi-bag-check me-2"></i>Lịch sử đơn hàng</a></li>
                             <li>
+                                <a class="dropdown-item d-flex justify-content-between" href="{{ route('wallet.index') }}">
+                                    <span><i class="bi bi-wallet2 me-2"></i>Ví ToyLand</span>
+                                    <span class="fw-semibold text-success">{{ number_format((int) Auth::user()->wallet_balance, 0, ',', '.') }} đ</span>
+                                </a>
+                            </li>
+                            <li>
                                 <a class="dropdown-item" href="{{ route('children.index') }}">
                                     <i class="bi bi-emoji-smile me-2"></i>Hồ sơ của bé
                                     @if (($birthdaySoon ?? collect())->isNotEmpty())

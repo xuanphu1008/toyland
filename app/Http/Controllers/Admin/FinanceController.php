@@ -3,18 +3,14 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Mail\PaymentStatusChangedMail;
+use App\Models\OrderStatusLog;
 use App\Models\Order;
-use App\Models\UserNotification;
 use App\Services\CsvExportService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
-use Throwable;
 
 /**
  * TÀI CHÍNH — thống kê và tra cứu giao dịch thanh toán.
@@ -38,26 +34,34 @@ class FinanceController extends Controller
         'paid' => 'Đã thanh toán',
         'failed' => 'Thanh toán thất bại',
         'cancelled' => 'Đã hủy',
+        'cod_collected' => 'Đã thu hộ - chờ đối soát',
         'refund_pending' => 'Chờ hoàn tiền',
         'refunded' => 'Đã hoàn tiền',
     ];
 
-    private const METHODS = ['cod' => 'COD', 'momo' => 'MoMo', 'unknown' => 'Chưa xác định'];
+    private const METHODS = ['cod' => 'COD', 'momo' => 'MoMo', 'wallet' => 'Ví ToyLand', 'unknown' => 'Chưa xác định'];
 
     /**
-     * Bảng chuyển trạng thái cho đơn COD.
+     * Bảng chuyển trạng thái do ADMIN làm tay cho đơn COD: CHỈ có việc ĐỐI SOÁT.
      *
-     * Chỉ những bước có trong bảng này mới được phép. Nhờ vậy không ai lỡ tay
-     * kéo một đơn "Đã hoàn tiền" ngược về "Đã thanh toán", hay nhảy thẳng từ
-     * "Chờ thanh toán" sang "Đã hoàn tiền" mà chưa từng thu tiền.
+     * Vòng đời tiền COD:
+     *   pending --(shipper giao xong, hệ thống tự làm)--> cod_collected
+     *   cod_collected --(admin đối soát khớp với bên vận chuyển)--> paid
+     *   cod_collected --(thiếu/lệch tiền)--> failed --(sau khi xử lý xong)--> paid
      *
-     * Mỗi trạng thái đều tự trỏ về chính nó để thao tác lặp lại không báo lỗi.
+     * KHÔNG có bước nào dẫn tới refund_pending / refunded ở đây. Hoàn tiền chỉ sinh
+     * ra từ hủy đơn / hoàn hàng / yêu cầu của khách đã được duyệt và được xử lý ở
+     * màn "Hoàn tiền" - trạng thái thanh toán là HỆ QUẢ của sự kiện thật, không
+     * phải một ô để admin chọn tùy ý.
+     *
+     * Mỗi trạng thái tự trỏ về chính nó để thao tác lặp lại không báo lỗi.
      */
     private const COD_TRANSITIONS = [
-        'pending' => ['pending', 'paid', 'failed'],
-        'failed' => ['failed', 'pending', 'paid'],
-        'paid' => ['paid', 'refund_pending'],
-        'refund_pending' => ['refund_pending', 'refunded'],
+        'pending' => ['pending'],
+        'cod_collected' => ['cod_collected', 'paid', 'failed'],
+        'failed' => ['failed', 'paid'],
+        'paid' => ['paid'],
+        'refund_pending' => ['refund_pending'],
         'refunded' => ['refunded'],
         'cancelled' => ['cancelled'],
     ];
@@ -68,22 +72,7 @@ class FinanceController extends Controller
      * lại (sinh bản ghi 'pending' mới) - nếu lấy bản ghi mới nhất thì đơn sẽ bị
      * báo là chưa thanh toán, tiền thật biến mất khỏi báo cáo.
      */
-    private const PAYMENT_PRIORITY = "CASE WHEN status IN ('paid', 'refund_pending', 'refunded') THEN 0 ELSE 1 END";
-
-    /**
-     * Lời nhắn gửi khách ứng với trạng thái MỚI của khoản thanh toán COD.
-     *
-     * Viết thành hằng số thay vì match() rải trong hàm để một phép kiểm tra tự
-     * động có thể đối chiếu: MỌI trạng thái đích trong COD_TRANSITIONS đều phải
-     * có lời nhắn ở đây. Thiếu một dòng thì khách nhận được thông báo trống.
-     */
-    private const CUSTOMER_MESSAGES = [
-        'pending' => 'Đơn đã chuyển lại trạng thái chờ thanh toán khi nhận hàng.',
-        'paid' => 'Shop đã xác nhận nhận đủ tiền thanh toán khi nhận hàng. Cảm ơn bạn đã mua sắm tại ToyLand!',
-        'failed' => 'Shop chưa ghi nhận được khoản thanh toán cho đơn này. Nếu có nhầm lẫn, vui lòng gọi 1900 6868.',
-        'refund_pending' => 'Shop đang xử lý hoàn tiền cho đơn này, dự kiến trong 3-5 ngày làm việc.',
-        'refunded' => 'Shop đã hoàn tiền xong cho đơn này. Bạn vui lòng kiểm tra lại tài khoản nhận tiền nhé.',
-    ];
+    private const PAYMENT_PRIORITY = "CASE WHEN status IN ('paid', 'cod_collected', 'refund_pending', 'refunded') THEN 0 ELSE 1 END";
 
     // =================================================================
 
@@ -382,18 +371,16 @@ class FinanceController extends Controller
                 return null;
             }
 
-            // Đơn đã hủy hoặc đã hoàn hàng thì không còn tiền để thu.
-            if (in_array($newStatus, ['pending', 'paid'], true)
-                && ($order->status === 'cancelled'
-                    || in_array($order->shipping_status, ['cancelled', 'return', 'returning', 'returned'], true))) {
+            // Đối soát chỉ có nghĩa khi hàng đã giao: đơn chưa giao/đã hủy/đã hoàn thì không có tiền để đối soát.
+            if ($order->status !== 'completed') {
                 throw ValidationException::withMessages([
-                    'payment_status' => 'Không thể xác nhận thu tiền cho đơn đã hủy hoặc hoàn hàng.',
+                    'payment_status' => 'Chỉ đối soát COD cho đơn đã giao thành công. Đơn này đang "'.(Order::STATUSES[$order->status] ?? $order->status).'".',
                 ]);
             }
 
             $attributes = [
                 'status' => $newStatus,
-                'message' => 'Quản trị viên #'.$request->user()->id.' cập nhật: '.self::STATUSES[$newStatus],
+                'message' => 'Quản trị viên #'.$request->user()->id.' đối soát COD: '.self::STATUSES[$newStatus],
                 // Giữ nguyên mốc đã thu nếu trước đó từng thu, để lịch sử không bị dời.
                 'paid_at' => $newStatus === 'paid' ? ($payment?->paid_at ?? now()) : $payment?->paid_at,
             ];
@@ -416,58 +403,23 @@ class FinanceController extends Controller
             // quản lý đơn và vỡ dải tiến trình bên phía khách hàng.
             $order->update(['payment_status' => $newStatus]);
 
+            // Ghi nhật ký: ai đối soát, từ trạng thái nào sang trạng thái nào.
+            OrderStatusLog::create([
+                'order_id' => $order->id,
+                'changed_by' => $request->user()->id,
+                'from_status' => $order->status,
+                'to_status' => $order->status,
+                'note' => mb_substr('[Shop] Đối soát COD: '.(self::STATUSES[$currentStatus] ?? $currentStatus).' -> '.(self::STATUSES[$newStatus] ?? $newStatus), 0, 255),
+            ]);
+
             return ['from' => $currentStatus, 'to' => $newStatus];
         });
 
-        // Báo khách NGOÀI giao dịch: chỉ khi dữ liệu đã thật sự được lưu. Nếu gửi
-        // từ bên trong mà giao dịch sau đó bị hoàn tác, khách sẽ nhận tin "đã
-        // thanh toán" cho một thay đổi không hề tồn tại.
-        if ($change) {
-            $this->notifyCustomer($order->refresh(), $change['from'], $change['to']);
-        }
+        // Đối soát COD là việc nội bộ giữa shop và đơn vị vận chuyển: khách đã trả tiền mặt
+        // cho shipper từ lúc nhận hàng nên KHÔNG gửi thông báo cho khách ở bước này.
 
         return back()->with('success', $change
-            ? 'Đã lưu trạng thái thanh toán đơn COD #'.$order->id.' và gửi thông báo cho khách.'
+            ? 'Đã lưu đối soát COD đơn #'.$order->id.'.'
             : 'Trạng thái thanh toán đơn COD #'.$order->id.' không thay đổi.');
-    }
-
-    /**
-     * Báo cho khách biết khoản thanh toán vừa đổi trạng thái.
-     *
-     * Theo đúng thứ tự của phần đơn hàng: thông báo trong ứng dụng trước (chỉ
-     * ghi vào CSDL nên chắc chắn tới nơi), email sau. Lỗi gửi email chỉ ghi log,
-     * không bao giờ làm hỏng thao tác của quản trị viên - tiền đã được ghi nhận
-     * rồi, không thể vì máy chủ thư trục trặc mà báo lỗi ngược cho admin.
-     */
-    private function notifyCustomer(Order $order, string $from, string $to): void
-    {
-        UserNotification::send(
-            $order->user_id,
-            'order',
-            'Đơn #'.$order->id.': '.(self::STATUSES[$to] ?? $to),
-            self::CUSTOMER_MESSAGES[$to] ?? 'Trạng thái thanh toán của đơn hàng vừa được cập nhật.',
-            route('orders.show', $order->id)
-        );
-
-        try {
-            $order->loadMissing('user');
-            $email = $order->user->email ?? null;
-
-            if ($email) {
-                Mail::to($email)->send(new PaymentStatusChangedMail(
-                    $order,
-                    $from,
-                    $to,
-                    self::STATUSES[$to] ?? $to,
-                    self::CUSTOMER_MESSAGES[$to] ?? ''
-                ));
-            }
-        } catch (Throwable $e) {
-            Log::warning('Không gửi được email cập nhật thanh toán đơn #'.$order->id, [
-                'from' => $from,
-                'to' => $to,
-                'message' => $e->getMessage(),
-            ]);
-        }
     }
 }

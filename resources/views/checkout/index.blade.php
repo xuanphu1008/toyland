@@ -152,6 +152,18 @@
                             <i class="bi bi-cash-coin"></i> Thanh toán khi nhận hàng (COD)
                         </label>
                     </div>
+                    {{-- Ví ToyLand: chỉ trả TRỌN đơn, chỉ chọn được khi số dư đủ (JS cập nhật theo phí ship) --}}
+                    @if ((int) $user->wallet_balance > 0)
+                    <div class="form-check border rounded-3 p-3 mb-2" id="wallet-box" data-balance="{{ (int) $user->wallet_balance }}">
+                        <input class="form-check-input" type="radio" name="payment_method" id="payment-wallet" value="wallet"
+                            {{ old('payment_method') === 'wallet' ? 'checked' : '' }}>
+                        <label class="form-check-label" for="payment-wallet">
+                            <i class="bi bi-wallet-fill"></i> Thanh toán bằng Ví ToyLand
+                            <span class="text-success fw-semibold">(số dư {{ number_format($user->wallet_balance, 0, ',', '.') }} đ)</span>
+                        </label>
+                        <div class="small text-muted mt-1" id="wallet-hint"></div>
+                    </div>
+                    @endif
                     <div class="border rounded-3 p-3">
                         <div class="form-check">
                             <input class="form-check-input" type="radio" name="payment_method" id="payment-momo" value="momo"
@@ -324,8 +336,21 @@
 
         const formatCurrency = (n) => new Intl.NumberFormat('vi-VN').format(n) + ' đ';
 
+        // Ví chỉ chọn được khi số dư >= tổng đơn (đã gồm phí ship); không đủ thì khóa lựa chọn
+        function syncWallet(total) {
+            const box = document.getElementById('wallet-box');
+            if (!box) return;
+            const radio = document.getElementById('payment-wallet');
+            const hintEl = document.getElementById('wallet-hint');
+            const enough = parseInt(box.dataset.balance, 10) >= total;
+            radio.disabled = !enough;
+            if (!enough && radio.checked) document.getElementById('payment-cod').checked = true;
+            hintEl.textContent = enough ? 'Số dư đủ trả toàn bộ đơn này.' : 'Số dư chưa đủ trả toàn bộ đơn (' + formatCurrency(total) + '). Hãy chọn COD hoặc MoMo.';
+        }
+
         function updateGrandTotal(fee) {
             grandTotalDisplay.textContent = formatCurrency(subtotal + fee);
+            syncWallet(subtotal + fee);
         }
 
         function resetFee(message) {

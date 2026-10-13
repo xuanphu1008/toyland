@@ -9,7 +9,7 @@
 @foreach ($orders as $order)
 @php
 $isMomo = $order->payment_method === 'momo';
-$isPaid = $order->payment_status === 'paid';
+$isPaid = $order->customerHasPaid();
 $lastTransaction = $order->latestPaymentTransaction;
 
 // Hình thức MoMo đã dùng ở lần giao dịch gần nhất, dùng để đánh dấu mặc định trong menu

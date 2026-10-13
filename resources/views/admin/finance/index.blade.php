@@ -12,6 +12,7 @@
         'paid' => 'text-success',
         'failed' => 'text-danger',
         'cancelled' => 'text-secondary',
+        'cod_collected' => 'text-info',
         'refund_pending' => 'text-warning',
         'refunded' => 'text-secondary',
     ];

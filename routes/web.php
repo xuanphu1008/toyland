@@ -183,6 +183,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // Đơn hàng
     Route::get('/orders', [OrderController::class, 'index'])->name('orders.index');
     Route::get('/orders/{order}', [OrderController::class, 'show'])->name('orders.show');
+
+    // Ví ToyLand + hoàn tiền / trả hàng của khách
+    Route::get('/vi', [\App\Http\Controllers\WalletController::class, 'index'])->name('wallet.index');
+    Route::post('/orders/{order}/bao-tru-tien', [\App\Http\Controllers\RefundRequestController::class, 'reportPayment'])->name('refunds.report');
+    Route::post('/orders/{order}/tra-hang', [\App\Http\Controllers\RefundRequestController::class, 'requestReturn'])->name('refunds.return');
+    Route::patch('/yeu-cau-hoan/{refund}/gui-hang', [\App\Http\Controllers\RefundRequestController::class, 'ship'])->name('refunds.ship');
+    Route::delete('/yeu-cau-hoan/{refund}', [\App\Http\Controllers\RefundRequestController::class, 'cancel'])->name('refunds.cancel');
     Route::patch('/orders/{order}/cancel', [OrderController::class, 'cancel'])->name('orders.cancel');
     // Hóa đơn để in / lưu thành PDF bằng chức năng in sẵn có của trình duyệt
     Route::get('/orders/{order}/hoa-don', [OrderController::class, 'invoice'])->name('orders.invoice');
@@ -255,6 +262,16 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'admin'])->group(fun
     // Tài chính: thống kê thanh toán và tra cứu giao dịch.
     // Đặt route tĩnh /finance/transactions TRƯỚC route có tham số /finance/{order}/status
     // là thói quen an toàn, tránh "transactions" bị hiểu nhầm thành mã đơn hàng.
+    // Hoàn tiền & trả hàng
+    Route::get('/hoan-tien', [\App\Http\Controllers\Admin\RefundController::class, 'index'])->name('refunds.index');
+    Route::get('/hoan-tien/{refund}', [\App\Http\Controllers\Admin\RefundController::class, 'show'])->name('refunds.show');
+    Route::post('/hoan-tien/{refund}/hoan', [\App\Http\Controllers\Admin\RefundController::class, 'payout'])->name('refunds.payout');
+    Route::post('/hoan-tien/{refund}/tu-choi', [\App\Http\Controllers\Admin\RefundController::class, 'reject'])->name('refunds.reject');
+    Route::post('/hoan-tien/{refund}/ghi-nhan-thanh-toan', [\App\Http\Controllers\Admin\RefundController::class, 'confirmPayment'])->name('refunds.confirm-payment');
+    Route::post('/hoan-tien/{refund}/duyet-tra-hang', [\App\Http\Controllers\Admin\RefundController::class, 'approveReturn'])->name('refunds.approve-return');
+    Route::post('/hoan-tien/{refund}/nhan-hang', [\App\Http\Controllers\Admin\RefundController::class, 'receive'])->name('refunds.receive');
+    Route::post('/hoan-tien/{refund}/kiem-hang', [\App\Http\Controllers\Admin\RefundController::class, 'inspect'])->name('refunds.inspect');
+
     Route::get('/finance', [AdminFinanceController::class, 'index'])->name('finance.index');
     Route::get('/finance/transactions', [AdminFinanceController::class, 'transactions'])->name('finance.transactions');
     Route::get('/finance/export', [AdminFinanceController::class, 'export'])->name('finance.export');

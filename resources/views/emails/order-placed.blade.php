@@ -57,7 +57,7 @@
                 <div><strong>Địa chỉ nhận hàng:</strong> {{ $order->shipping_address }}</div>
                 <div style="margin-top:6px;">
                     <strong>Hình thức thanh toán:</strong>
-                    {{ $order->payment_method === 'momo' ? 'Ví MoMo' : 'COD - Thanh toán khi nhận hàng' }}
+                    {{ $order->payment_method === 'momo' ? 'Ví MoMo' : ($order->payment_method === 'wallet' ? 'Ví ToyLand (đã thanh toán)' : 'COD - Thanh toán khi nhận hàng') }}
                 </div>
             </div>
 

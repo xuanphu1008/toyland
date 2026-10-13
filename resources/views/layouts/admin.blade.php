@@ -151,6 +151,11 @@
             <a class="nav-link {{ request()->routeIs('admin.finance.transactions') ? 'active' : '' }}" href="{{ route('admin.finance.transactions') }}">
                 <i class="bi bi-credit-card-2-front me-2"></i> Giao dịch thanh toán
             </a>
+            @php($openRefunds = \App\Models\RefundRequest::whereIn('status', ['requested', 'in_transit', 'received'])->count())
+            <a class="nav-link {{ request()->routeIs('admin.refunds.*') ? 'active' : '' }}" href="{{ route('admin.refunds.index', ['status' => 'open']) }}">
+                <i class="bi bi-arrow-return-left me-2"></i> Hoàn tiền & trả hàng
+                @if ($openRefunds > 0)<span class="badge bg-danger ms-1">{{ $openRefunds }}</span>@endif
+            </a>
             <a class="nav-link {{ request()->routeIs('admin.exports.*') ? 'active' : '' }}" href="{{ route('admin.exports.index') }}">
                 <i class="bi bi-file-earmark-spreadsheet me-2"></i> Xuất dữ liệu
             </a>

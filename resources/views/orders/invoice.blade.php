@@ -168,8 +168,8 @@
 
         <div class="col">
             <div class="label">Thanh toán & vận chuyển</div>
-            Hình thức: <strong>{{ $order->payment_method === 'momo' ? 'MoMo' : 'COD khi nhận hàng' }}</strong><br>
-            Tình trạng: <strong>{{ $order->isPaid() ? 'Đã thanh toán' : 'Chưa thanh toán' }}</strong><br>
+            Hình thức: <strong>{{ $order->payment_method_label }}</strong><br>
+            Tình trạng: <strong>{{ $order->customerHasPaid() ? 'Đã thanh toán' : 'Chưa thanh toán' }}</strong><br>
             Đơn vị giao: Giao Hàng Nhanh (GHN)
             @if (! empty($order->ghn_order_code))
             <br>Mã vận đơn GHN: <strong>{{ $order->ghn_order_code }}</strong>

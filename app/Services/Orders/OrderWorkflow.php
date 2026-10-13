@@ -99,6 +99,12 @@ class OrderWorkflow
             'label' => 'Đã nhận lại hàng hoàn', 'actors' => ['admin', 'carrier'],
             'from' => ['returning'], 'to' => 'returned', 'ship' => 'returned',
         ],
+
+        // Chỉ RefundService gọi (sau khi shop kiểm hàng khách trả đạt) - không có nút riêng
+        'return_accepted' => [
+            'label' => 'Nhận hàng khách trả', 'actors' => ['admin'], 'internal' => true,
+            'from' => ['completed'], 'to' => 'returned', 'ship' => 'returned',
+        ],
     ];
 
     /** Hành động được làm hàng loạt từ màn hình danh sách */
@@ -146,7 +152,7 @@ class OrderWorkflow
                 $fromStatus = $o->status;
                 $fromShipping = $o->shipping_status;
 
-                $this->performSideEffects($o, $action, $note);
+                $this->performSideEffects($o, $action, $note, $opts);
 
                 $o->status = $def['to'];
 
@@ -168,6 +174,16 @@ class OrderWorkflow
             });
         } catch (ModelNotFoundException $e) {
             throw new WorkflowException('Không tìm thấy đơn hàng #' . $orderId . '.');
+        }
+
+        // Đơn không thành mà khách đã trả tiền -> mở yêu cầu hoàn tiền (ví thì hoàn ngay)
+        if (in_array($action, ['cancel', 'expire', 'confirm_returned'], true) && $updated->payment_status === 'refund_pending') {
+            try {
+                app(\App\Services\RefundService::class)->openForOrderPayments($updated, $note !== '' ? $note : ($def['label']));
+                $updated->refresh();
+            } catch (Throwable $e) {
+                Log::error('Không mở được yêu cầu hoàn tiền đơn #' . $updated->id, ['message' => $e->getMessage()]);
+            }
         }
 
         // Báo tin SAU khi dữ liệu đã chốt - lỗi gửi thư không làm hỏng thao tác
@@ -212,7 +228,7 @@ class OrderWorkflow
         $result = [];
 
         foreach (self::ACTIONS as $action => $def) {
-            if (! in_array($actor, $def['actors'], true)) {
+            if (! in_array($actor, $def['actors'], true) || ! empty($def['internal'])) {
                 continue;
             }
 
@@ -252,6 +268,13 @@ class OrderWorkflow
 
         $released = 0;
 
+        // Dọn luôn các yêu cầu trả hàng đã duyệt mà khách không gửi hàng đúng hạn
+        try {
+            app(\App\Services\RefundService::class)->expireStaleReturns();
+        } catch (Throwable $e) {
+            Log::warning('Không dọn được yêu cầu trả hàng quá hạn', ['message' => $e->getMessage()]);
+        }
+
         foreach ($ids as $id) {
             try {
                 $this->apply($id, 'expire', 'system', ['note' => 'Quá ' . $this->holdMinutes() . ' phút chưa thanh toán']);
@@ -269,7 +292,7 @@ class OrderWorkflow
      * - Đơn đang chờ thanh toán: chuyển sang Chờ xác nhận.
      * - Đơn đã bị hủy vì quá hạn: tiền đến muộn -> chuyển "chờ hoàn tiền" và báo shop.
      */
-    public function paymentReceived(Order $order): void
+    public function paymentReceived(Order $order, ?PaymentTransaction $tx = null): void
     {
         if ($order->status === 'awaiting_payment') {
             $order->payment_status = 'paid';
@@ -293,19 +316,18 @@ class OrderWorkflow
                 'note' => '[Hệ thống] MoMo báo đã thanh toán SAU KHI đơn đã hủy -> chờ hoàn tiền cho khách',
             ]);
 
-            UserNotification::sendToAdmins(
-                'order',
-                'Cần hoàn tiền đơn #' . $order->id,
-                'Khách thanh toán MoMo sau khi đơn đã hết hạn/bị hủy.',
-                route('admin.orders.show', $order->id)
-            );
-            UserNotification::send(
-                $order->user_id,
-                'order_status',
-                'Đơn #' . $order->id . ': shop sẽ hoàn tiền',
-                'Thanh toán của bạn đến sau khi đơn đã hết thời gian giữ hàng. Shop sẽ hoàn lại tiền cho bạn.',
-                route('orders.show', $order->id)
-            );
+            app(\App\Services\RefundService::class)
+                ->openForOrderPayments($order, 'Thanh toán MoMo đến sau khi đơn đã hết hạn/bị hủy');
+
+            return;
+        }
+
+        // Đơn đã có khoản thanh toán khác rồi mà MoMo lại báo thêm một khoản -> khách bị thu TRÙNG
+        if ($tx && PaymentTransaction::where('order_id', $order->id)->where('id', '!=', $tx->id)
+            ->whereIn('status', ['paid', 'refund_pending', 'refunded'])->exists()) {
+            $tx->update(['status' => 'refund_pending', 'message' => 'Thanh toán trùng - cần hoàn cho khách']);
+            app(\App\Services\RefundService::class)
+                ->openForTransaction($order, $tx, 'duplicate_payment', 'Đơn bị thanh toán MoMo hai lần');
 
             return;
         }
@@ -361,6 +383,10 @@ class OrderWorkflow
             }
         }
 
+        if ($action === 'return_accepted' && empty($opts['via_refund'])) {
+            throw new WorkflowException('Đơn đã giao chỉ chuyển sang "Đã hoàn hàng" qua yêu cầu trả hàng đã được kiểm tra.');
+        }
+
         if ($action === 'confirm' && $o->payment_method === 'momo' && ! $o->isPaid()) {
             throw new WorkflowException('Đơn #' . $o->id . ' thanh toán MoMo nhưng chưa nhận được tiền.');
         }
@@ -382,7 +408,7 @@ class OrderWorkflow
     // CÁC VIỆC ĐI KÈM MỖI BƯỚC
     // ===================================================================
 
-    private function performSideEffects(Order $o, string $action, string $note): void
+    private function performSideEffects(Order $o, string $action, string $note, array $opts = []): void
     {
         switch ($action) {
             case 'mark_paid':
@@ -448,6 +474,16 @@ class OrderWorkflow
                 $this->restock($o);
                 $this->settlePaymentOnCancel($o, 'Khách không nhận hàng - đã hoàn về shop');
                 break;
+
+            case 'return_accepted':
+                // Khách trả hàng đã nhận: hàng chỉ nhập lại kho khi shop xác nhận còn bán được;
+                // điểm thưởng + chi tiêu tích lũy của đơn bị thu hồi. Tiền hoàn do RefundService lo.
+                $o->returned_at = now();
+                if (! empty($opts['restock'])) {
+                    $this->restock($o);
+                }
+                $this->revokeLoyaltyPoints($o);
+                break;
         }
     }
 
@@ -476,10 +512,10 @@ class OrderWorkflow
      */
     private function settlePaymentOnCancel(Order $o, string $message): void
     {
-        if ($o->isPaid()) {
+        if ($o->customerHasPaid()) {
             $o->payment_status = 'refund_pending';
 
-            PaymentTransaction::where('order_id', $o->id)->where('status', 'paid')
+            PaymentTransaction::where('order_id', $o->id)->whereIn('status', ['paid', 'cod_collected'])
                 ->update(['status' => 'refund_pending', 'message' => $message . ' - chờ hoàn tiền cho khách']);
 
             return;
@@ -495,25 +531,28 @@ class OrderWorkflow
     /** Giao thành công đơn COD = bên vận chuyển đã thu hộ tiền */
     private function collectCod(Order $o): void
     {
-        if ($o->payment_method !== 'cod' || $o->isPaid()) {
+        if ($o->payment_method !== 'cod' || $o->customerHasPaid()) {
             return;
         }
 
-        $o->payment_status = 'paid';
+        // Shipper đã nhận tiền mặt của khách NHƯNG tiền còn nằm ở shipper/đơn vị vận chuyển,
+        // chưa về shop. Chỉ khi admin đối soát khớp (trang Tài chính) mới thành 'paid'.
+        // Khách thì đã trả tiền xong (xem Order::customerHasPaid).
+        $o->payment_status = 'cod_collected';
 
         $updated = PaymentTransaction::where('order_id', $o->id)
             ->where('gateway', 'cod')
             ->whereIn('status', ['pending', 'failed'])
-            ->update(['status' => 'paid', 'paid_at' => now(), 'message' => 'Đơn vị vận chuyển đã thu hộ khi giao hàng']);
+            ->update(['status' => 'cod_collected', 'paid_at' => now(), 'message' => 'Shipper đã thu hộ khi giao hàng - chờ đối soát với shop']);
 
         if ($updated === 0) {
             PaymentTransaction::create([
                 'order_id' => $o->id,
                 'gateway' => 'cod',
                 'amount' => $o->total_price,
-                'status' => 'paid',
+                'status' => 'cod_collected',
                 'paid_at' => now(),
-                'message' => 'Đơn vị vận chuyển đã thu hộ khi giao hàng',
+                'message' => 'Shipper đã thu hộ khi giao hàng - chờ đối soát với shop',
             ]);
         }
     }
@@ -544,6 +583,28 @@ class OrderWorkflow
                 'order_id' => $o->id,
                 'points' => $points,
                 'reason' => 'Tích điểm từ đơn hàng #' . $o->id,
+            ]);
+        }
+    }
+
+    /** Thu hồi điểm + chi tiêu tích lũy đã cộng cho đơn (khi khách trả hàng được chấp nhận) */
+    private function revokeLoyaltyPoints(Order $o): void
+    {
+        $points = (int) $o->points_earned;
+        $user = User::lockForUpdate()->find($o->user_id);
+
+        if (! $user || ($points <= 0 && (int) $o->total_price <= 0)) {
+            return;
+        }
+
+        $user->points = max(0, (int) $user->points - $points);
+        $user->lifetime_spent = max(0, (int) $user->lifetime_spent - (int) $o->total_price);
+        $user->save();
+
+        if ($points > 0) {
+            PointTransaction::create([
+                'user_id' => $user->id, 'order_id' => $o->id, 'points' => -$points,
+                'reason' => 'Thu hồi điểm do khách trả hàng đơn #' . $o->id,
             ]);
         }
     }
@@ -594,6 +655,7 @@ class OrderWorkflow
             'deliver' => 'Đơn đã giao thành công. Mời bạn đánh giá sản phẩm để nhận điểm thưởng.',
             'fail_delivery' => 'Shipper chưa giao được đơn' . ($note !== '' ? ': ' . $note : '') . '. Shop sẽ liên hệ để giao lại.',
             'start_return' => 'Đơn không giao được và đang được hoàn về shop.',
+            'return_accepted' => 'Shop đã nhận và kiểm tra hàng bạn trả. Tiền được hoàn vào Ví ToyLand.',
             'confirm_returned' => 'Đơn đã hoàn về shop.' . ($o->payment_status === 'refund_pending' ? ' Shop sẽ hoàn tiền cho bạn.' : ''),
         ];
 

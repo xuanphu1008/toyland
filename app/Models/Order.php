@@ -78,6 +78,7 @@ class Order extends Model
     public const PAYMENT_LABELS = [
         'pending' => 'Chờ thanh toán', 'initiated' => 'Đang chờ MoMo', 'paid' => 'Đã thanh toán',
         'failed' => 'Thanh toán thất bại', 'cancelled' => 'Đã hủy',
+        'cod_collected' => 'Đã thu hộ - chờ đối soát',
         'refund_pending' => 'Chờ hoàn tiền', 'refunded' => 'Đã hoàn tiền',
     ];
 
@@ -165,6 +166,22 @@ class Order extends Model
         return $this->payment_status === 'paid';
     }
 
+    /**
+     * Khách đã trả tiền chưa (theo góc nhìn của KHÁCH): đã thanh toán, hoặc đã đưa
+     * tiền mặt cho shipper (cod_collected). Khác isPaid(): isPaid chỉ đúng khi tiền
+     * đã thật sự nằm ở shop (MoMo/ví đã nhận, COD đã đối soát xong).
+     */
+    /** Nhãn phương thức thanh toán để hiển thị */
+    public function getPaymentMethodLabelAttribute(): string
+    {
+        return ['cod' => 'COD khi nhận hàng', 'momo' => 'MoMo', 'wallet' => 'Ví ToyLand'][$this->payment_method] ?? (string) $this->payment_method;
+    }
+
+    public function customerHasPaid(): bool
+    {
+        return in_array($this->payment_status, ['paid', 'cod_collected'], true);
+    }
+
     public function isCancelled(): bool
     {
         return $this->status === 'cancelled';
@@ -206,7 +223,7 @@ class Order extends Model
     /** Số tiền bên vận chuyển phải thu hộ khi giao (COD chưa thanh toán) */
     public function getCodAmountAttribute(): int
     {
-        return $this->payment_method === 'cod' && ! $this->isPaid() ? (int) $this->total_price : 0;
+        return $this->payment_method === 'cod' && ! $this->customerHasPaid() ? (int) $this->total_price : 0;
     }
 
     /** Chỉ đếm những đơn thật sự bán được (xem EXCLUDED_FROM_SALES) */
@@ -221,7 +238,9 @@ class Order extends Model
      */
     public function canBeCancelledByCustomer(): bool
     {
-        return in_array($this->status, ['awaiting_payment', 'pending', 'confirmed'], true) && ! $this->isPaid();
+        // Đã thanh toán (MoMo/ví) vẫn tự hủy được khi shop chưa đóng gói: tiền được chuyển
+        // thành yêu cầu hoàn tiền về ví (xem RefundService).
+        return in_array($this->status, ['awaiting_payment', 'pending', 'confirmed'], true);
     }
 
     /**

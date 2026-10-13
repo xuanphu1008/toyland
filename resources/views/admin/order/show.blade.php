@@ -98,7 +98,7 @@ $txStatusColor = [
                         <button type="submit" class="btn btn-danger">Hủy đơn</button>
                     </div>
                     <div class="form-text">
-                        Trả hàng về kho{{ $order->ghn_order_code ? ', hủy vận đơn ' . $order->ghn_order_code : '' }}{{ $order->isPaid() ? ', chuyển tiền sang "Chờ hoàn tiền"' : '' }}.
+                        Trả hàng về kho{{ $order->ghn_order_code ? ', hủy vận đơn ' . $order->ghn_order_code : '' }}{{ $order->customerHasPaid() ? ', chuyển tiền sang "Chờ hoàn tiền"' : '' }}.
                     </div>
                 </form>
                 @else
@@ -164,7 +164,7 @@ $txStatusColor = [
         <div class="card border-0 shadow-sm rounded-4">
             <div class="card-body">
                 <h6 class="fw-bold text-secondary mb-3">Thanh toán</h6>
-                <div class="mb-2"><span class="text-muted small">Hình thức:</span><br><span class="text-uppercase fw-semibold">{{ $order->payment_method }}</span></div>
+                <div class="mb-2"><span class="text-muted small">Hình thức:</span><br><span class="fw-semibold">{{ $order->payment_method_label }}</span></div>
                 <div class="mb-0">
                     <span class="text-muted small">Trạng thái:</span><br>
                     <span class="badge {{ $txStatusColor[$order->payment_status] ?? 'bg-secondary' }}">

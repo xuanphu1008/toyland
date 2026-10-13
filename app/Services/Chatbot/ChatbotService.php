@@ -247,8 +247,8 @@ class ChatbotService
         $lines[] = '• Trạng thái: ' . $order->status_label;
         $lines[] = '• Đặt lúc: ' . optional($order->created_at)->format('H:i d/m/Y');
         $lines[] = '• Tổng tiền: ' . number_format($order->total_price, 0, ',', '.') . ' đ';
-        $lines[] = '• Thanh toán: ' . ($order->payment_method === 'momo' ? 'MoMo' : 'COD khi nhận hàng')
-            . ($order->isPaid() ? ' (đã thanh toán)' : ' (chưa thanh toán)');
+        $lines[] = '• Thanh toán: ' . $order->payment_method_label
+            . ($order->customerHasPaid() ? ' (đã thanh toán)' : ' (chưa thanh toán)');
 
         $itemCount = $order->items->count();
         if ($itemCount > 0) {

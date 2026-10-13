@@ -96,7 +96,7 @@ class CheckoutController extends Controller
             'new_province_name' => 'nullable|string|max:120',
             'new_district_name' => 'nullable|string|max:120',
             'new_ward_name' => 'nullable|string|max:120',
-            'payment_method' => 'required|in:cod,momo',
+            'payment_method' => 'required|in:cod,momo,wallet',
             // Phương thức con của MoMo (ví/QR, thẻ ATM, thẻ quốc tế...). Chỉ có ý nghĩa khi
             // payment_method = momo; giá trị hợp lệ lấy từ whitelist trong MomoService.
             'momo_payment_option' => 'nullable|in:' . implode(',', array_keys(MomoService::PAYMENT_OPTIONS)),
@@ -175,6 +175,7 @@ class CheckoutController extends Controller
                 // MoMo: GIỮ HÀNG (đã trừ kho bên dưới) trong 30 phút chờ khách trả tiền;
                 // quá hạn thì OrderWorkflow::releaseExpired() tự hủy và trả kho.
                 $isMomo = $request->payment_method === 'momo';
+                $isWallet = $request->payment_method === 'wallet';
                 $workflow = app(OrderWorkflow::class);
 
                 $order = Order::create([
@@ -182,7 +183,7 @@ class CheckoutController extends Controller
                     'total_price' => $totalPrice,
                     'status' => $isMomo ? 'awaiting_payment' : 'pending',
                     'payment_method' => $request->payment_method,
-                    'payment_status' => 'pending',
+                    'payment_status' => $isWallet ? 'paid' : 'pending',
                     'payment_expires_at' => $isMomo ? now()->addMinutes($workflow->holdMinutes()) : null,
                     'shipping_status' => 'not_shipped',
                     'shipping_address' => "{$name} | {$phone} | {$addressText}",
@@ -257,6 +258,19 @@ class CheckoutController extends Controller
                     $product->decrement('quantity', $item['quantity']);
                 }
 
+                // VÍ TOYLAND: trả TRỌN đơn bằng số dư (không trả một phần, không kèm COD/MoMo).
+                // Trừ ví nằm trong cùng giao dịch CSDL với việc tạo đơn và trừ kho: lỗi ở đâu thì
+                // hoàn tác ở đó, không thể xảy ra "ví đã trừ mà đơn không có" hay ngược lại.
+                if ($isWallet) {
+                    app(\App\Services\WalletService::class)->debit($user->id, (int) $totalPrice, 'order_payment', [
+                        'order_id' => $order->id, 'note' => 'Thanh toán đơn #' . $order->id,
+                    ]);
+                    PaymentTransaction::create([
+                        'order_id' => $order->id, 'gateway' => 'wallet', 'amount' => $totalPrice,
+                        'status' => 'paid', 'paid_at' => now(), 'message' => 'Thanh toán bằng Ví ToyLand',
+                    ]);
+                }
+
                 return $order;
             });
         } catch (\Throwable $e) {
@@ -274,7 +288,7 @@ class CheckoutController extends Controller
             'to_status' => $order->status,
             'note' => $order->status === 'awaiting_payment'
                 ? '[Khách] Đặt hàng, chờ thanh toán MoMo (giữ hàng tới ' . $order->payment_expires_at->format('H:i d/m') . ')'
-                : '[Khách] Đặt hàng thành công (COD)',
+                : ($order->payment_method === 'wallet' ? '[Khách] Đặt hàng, đã thanh toán bằng Ví ToyLand' : '[Khách] Đặt hàng thành công (COD)'),
         ]);
 
         // Email xác nhận đơn hàng. Bọc try/catch để SMTP lỗi không làm hỏng việc đặt hàng.
@@ -290,6 +304,10 @@ class CheckoutController extends Controller
 
         // Đơn COD: chỉ ghi nhật ký giao dịch ở trạng thái 'pending' (thu tiền khi giao hàng),
         // không gọi cổng thanh toán nào cả.
+        if ($order->payment_method === 'wallet') {
+            return redirect()->route('orders.show', $order->id)->with('success', '🎉 Đặt hàng thành công! Đơn đã được thanh toán bằng Ví ToyLand.');
+        }
+
         if ($order->payment_method !== 'momo') {
             PaymentTransaction::create([
                 'order_id' => $order->id,

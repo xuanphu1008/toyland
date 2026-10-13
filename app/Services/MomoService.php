@@ -315,7 +315,7 @@ class MomoService
         // Chuyển đơn "Chờ thanh toán" sang "Chờ xác nhận" (hoặc xử lý tiền về
         // muộn khi đơn đã hết hạn giữ hàng) - xem OrderWorkflow::paymentReceived.
         if ($order) {
-            app(\App\Services\Orders\OrderWorkflow::class)->paymentReceived($order);
+            app(\App\Services\Orders\OrderWorkflow::class)->paymentReceived($order, $transaction);
         }
 
         return $transaction;

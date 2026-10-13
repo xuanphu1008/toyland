@@ -41,6 +41,16 @@ return [
         'max_delivery_attempts' => (int) env('ORDER_MAX_DELIVERY_ATTEMPTS', 3),
     ],
 
+    // ---- Ví ToyLand, hoàn tiền, trả hàng (App\Services\RefundService) ----
+    'refunds' => [
+        // Khách được yêu cầu trả hàng trong ngần này ngày kể từ lúc nhận hàng
+        'return_window_days' => (int) env('RETURN_WINDOW_DAYS', 7),
+        // Sau khi shop duyệt, khách phải gửi hàng về trong ngần này ngày, quá hạn thì yêu cầu tự hủy
+        'ship_back_days' => (int) env('RETURN_SHIP_BACK_DAYS', 7),
+        // Địa chỉ nhận hàng trả (hiện cho khách sau khi shop duyệt)
+        'return_address' => env('RETURN_ADDRESS', 'Kho ToyLand - 123 Đường Mẫu, Hà Nội (SĐT 1900 6868)'),
+    ],
+
     // Đơn vị vận chuyển: simulated (mô phỏng, quản trị viên đóng vai shipper) | ghn
     'shipping_carrier' => env('SHIPPING_CARRIER', 'simulated'),
 ];

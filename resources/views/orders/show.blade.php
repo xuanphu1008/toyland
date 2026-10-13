@@ -126,9 +126,9 @@
                 <div class="col-md-3">
                     <div class="text-muted">Thanh toán</div>
                     <div class="fw-semibold">
-                        {{ $order->payment_method === 'momo' ? 'MoMo' : 'COD' }}
-                        <span class="badge {{ $order->isPaid() ? 'bg-success' : 'bg-warning text-dark' }}">
-                            {{ $order->isPaid() ? 'Đã thanh toán' : 'Chưa thanh toán' }}
+                        {{ $order->payment_method === 'cod' ? 'COD' : $order->payment_method_label }}
+                        <span class="badge {{ $order->customerHasPaid() ? 'bg-success' : 'bg-warning text-dark' }}">
+                            {{ $order->customerHasPaid() ? 'Đã thanh toán' : 'Chưa thanh toán' }}
                         </span>
                     </div>
                 </div>
@@ -199,6 +199,8 @@
             </div>
             @endif
         </div>
+
+        @include('orders._refund')
     </div>
 </div>
 @endsection

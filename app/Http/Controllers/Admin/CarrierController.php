@@ -93,7 +93,7 @@ class CarrierController extends Controller
             'manual' => $carrier->isManuallyOperated(),
             'maxAttempts' => $this->workflow->maxDeliveryAttempts(),
             'codToCollect' => (int) Order::where('status', 'shipping')->where('payment_method', 'cod')
-                ->where('payment_status', '!=', 'paid')->sum('total_price'),
+                ->whereNotIn('payment_status', ['paid', 'cod_collected'])->sum('total_price'),
         ]);
     }
 

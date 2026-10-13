@@ -10,6 +10,7 @@
         'paid' => 'bg-success',
         'failed' => 'bg-danger',
         'cancelled' => 'bg-secondary',
+        'cod_collected' => 'bg-info text-dark',
         'refund_pending' => 'bg-warning text-dark',
         'refunded' => 'bg-secondary',
     ];
@@ -62,8 +63,8 @@
     <div class="card-header bg-white border-0 pt-3">
         <h6 class="fw-bold mb-1">Danh sách giao dịch ({{ number_format($orders->total()) }} đơn)</h6>
         <p class="text-muted small mb-0">
-            COD: xác nhận thu tiền hoặc thất bại; đơn đã thu tiền có thể chuyển sang chờ hoàn tiền rồi xác nhận đã hoàn tiền.
-            Mỗi lần lưu, khách nhận thông báo trong ứng dụng và email.
+            COD: shipper giao xong thì đơn tự vào "Đã thu hộ - chờ đối soát"; khi bên vận chuyển chuyển tiền về shop,
+            bạn đối soát khớp để chuyển sang "Đã thanh toán" (hoặc báo lệch). Hoàn tiền không làm ở đây mà ở mục "Hoàn tiền".
         </p>
     </div>
 
@@ -136,10 +137,18 @@
                             </select>
                             <button type="submit" class="btn btn-sm btn-primary text-nowrap">Lưu</button>
                         </form>
+                        @elseif (in_array($order->payment_status, ['refund_pending', 'refunded'], true))
+                        <span class="small text-muted">Xử lý ở mục
+                            @if (\Illuminate\Support\Facades\Route::has('admin.refunds.index'))
+                            <a href="{{ route('admin.refunds.index', ['order' => $order->id]) }}">Hoàn tiền</a>
+                            @else Hoàn tiền @endif
+                        </span>
+                        @elseif ($isCod && $order->payment_status === 'pending')
+                        <span class="small text-muted">Chờ giao hàng - tự cập nhật khi shipper giao xong</span>
                         @elseif ($isCod)
                         <span class="small text-muted">Không còn bước chuyển tiếp</span>
                         @else
-                        <span class="small text-muted">Do cổng thanh toán quyết định</span>
+                        <span class="small text-muted">Do hệ thống / cổng thanh toán quyết định</span>
                         @endif
                     </td>
                 </tr>

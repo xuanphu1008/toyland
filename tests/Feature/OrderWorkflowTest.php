@@ -75,9 +75,12 @@ class OrderWorkflowTest extends TestCase
             $o = $this->wf->apply($o, $a, 'carrier');
         }
         $this->assertSame('completed', $o->status);
-        $this->assertSame('paid', $o->payment_status);
+        // Shipper thu tiền mặt: khách đã trả nhưng tiền chưa về shop -> chờ đối soát
+        $this->assertSame('cod_collected', $o->payment_status);
+        $this->assertTrue($o->customerHasPaid());
+        $this->assertFalse($o->isPaid());
         $this->assertGreaterThan(0, $o->points_earned);
-        $this->assertSame('paid', PaymentTransaction::where('order_id', $o->id)->first()->status);
+        $this->assertSame('cod_collected', PaymentTransaction::where('order_id', $o->id)->first()->status);
     }
 
     public function test_giao_that_bai_3_lan_roi_hoan_tra_kho(): void
